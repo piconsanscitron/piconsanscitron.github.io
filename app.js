@@ -1,7 +1,9 @@
-// --- IMPORTS (Modules ES) ---
-// On utilise esm.sh avec l'option bundle pour inclure les polyfills Node.js nécessaires
-import { TelegramClient, Api } from 'https://esm.sh/telegram@2.19.7?bundle';
-import { StringSession } from 'https://esm.sh/telegram@2.19.7/sessions?bundle';
+// --- IMPORTS CORRIGÉS ---
+// On importe TOUT depuis le point d'entrée principal pour éviter les conflits de types (instanceof)
+import { TelegramClient, Api, sessions } from 'https://esm.sh/telegram@2.19.7?bundle';
+
+// On extrait StringSession de l'objet sessions exporté
+const { StringSession } = sessions;
 
 // --- VARIABLES D'ÉTAT ---
 let client;
@@ -11,7 +13,6 @@ let sessionString = localStorage.getItem('telesession') || "";
 let historyStack = [];
 
 // --- FONCTIONS UTILITAIRES (UI) ---
-
 const updateStatus = (text) => {
     const el = document.getElementById('status');
     if (el) el.textContent = text;
@@ -26,7 +27,6 @@ const showScreen = (screenId) => {
     if(target) {
         target.classList.remove('hidden');
         target.classList.add('active');
-        // Focus automatique pour la télécommande
         setTimeout(() => {
             const focusable = target.querySelector('[tabindex="0"]');
             if (focusable) focusable.focus();
@@ -42,19 +42,16 @@ const navigateTo = (screenId) => {
 
 const goBack = () => {
     if (historyStack.length === 0) return;
-    
-    // Si on quitte le player, on coupe la vidéo
     const video = document.getElementById('main-player');
     if (!video.paused) {
         video.pause();
-        video.src = ""; // Libérer la mémoire
+        video.src = "";
     }
-    
     const prev = historyStack.pop();
     showScreen(prev);
 };
 
-// --- LOGIQUE METIER TELEGRAM ---
+// --- LOGIQUE TELEGRAM ---
 
 const initTelegram = async () => {
     if (!API_ID || !API_HASH) {
@@ -65,14 +62,16 @@ const initTelegram = async () => {
     updateStatus("Initialisation du client Telegram...");
 
     try {
+        console.log("Session actuelle:", sessionString ? "Existante" : "Vide");
+        
+        // Création du client avec les imports unifiés
         client = new TelegramClient(new StringSession(sessionString), API_ID, API_HASH, {
             connectionRetries: 5,
+            useWSS: true, // Force WebSockets sécurisés (important pour browser)
         });
 
-        // Connexion
         await client.connect();
 
-        // Vérification Auth
         if (await client.checkAuthorization()) {
             loadChannels();
         } else {
@@ -82,10 +81,12 @@ const initTelegram = async () => {
     } catch (e) {
         console.error(e);
         updateStatus("Erreur Init: " + e.message);
-        if(e.message.includes("API_ID")) {
-            alert("API ID invalide ? Reset...");
-            localStorage.clear();
-            location.reload();
+        // Si erreur critique de session, on propose un reset
+        if(e.message.includes("API_ID") || e.message.includes("session")) {
+            if(confirm("Erreur de configuration détectée. Réinitialiser ?")) {
+                localStorage.clear();
+                location.reload();
+            }
         }
     }
 };
@@ -107,9 +108,7 @@ const loadChannels = async () => {
                 card.tabIndex = 0;
                 card.textContent = dialog.title || "Sans titre";
                 
-                // Gestionnaire d'événement direct (pas de HTML onclick)
                 const openChannel = () => loadVideos(dialog.entity);
-                
                 card.addEventListener('click', openChannel);
                 card.addEventListener('keydown', (e) => {
                     if (e.key === 'Enter') openChannel();
@@ -119,12 +118,13 @@ const loadChannels = async () => {
             }
         });
         
-        // Focus sur le premier élément
+        // Focus premier élément
         const first = grid.querySelector('.card');
         if(first) first.focus();
 
     } catch (e) {
         updateStatus("Erreur Canaux: " + e.message);
+        console.error(e);
     }
 };
 
@@ -134,7 +134,6 @@ const loadVideos = async (entity) => {
     grid.innerHTML = '<p>Recherche de vidéos...</p>';
 
     try {
-        // Filtre pour vidéos uniquement
         const messages = await client.getMessages(entity, {
             limit: 20,
             filter: new Api.InputMessagesFilterVideo()
@@ -142,7 +141,7 @@ const loadVideos = async (entity) => {
 
         grid.innerHTML = '';
         if (messages.length === 0) {
-            grid.innerHTML = '<p>Aucune vidéo trouvée récemment.</p>';
+            grid.innerHTML = '<p>Aucune vidéo trouvée.</p>';
             return;
         }
 
@@ -151,7 +150,6 @@ const loadVideos = async (entity) => {
             card.className = 'card';
             card.tabIndex = 0;
             
-            // Tentative d'afficher la durée
             let durationInfo = "";
             const attr = msg.media?.document?.attributes?.find(a => a.duration);
             if(attr) {
@@ -163,7 +161,6 @@ const loadVideos = async (entity) => {
             card.textContent = `Vidéo ${msg.id} ${durationInfo}`;
             
             const playThis = () => playVideo(msg);
-            
             card.addEventListener('click', playThis);
             card.addEventListener('keydown', (e) => {
                 if (e.key === 'Enter') playThis();
@@ -171,7 +168,7 @@ const loadVideos = async (entity) => {
 
             grid.appendChild(card);
         }
-
+        
         const first = grid.querySelector('.card');
         if(first) first.focus();
 
@@ -181,10 +178,9 @@ const loadVideos = async (entity) => {
 };
 
 const playVideo = async (msg) => {
-    updateStatus("Téléchargement du flux (patientez)...");
-    
+    updateStatus("Téléchargement en cours (RAM)...");
     try {
-        // Stream direct (peut être lent selon connexion)
+        // Attention: gros fichiers = crash possible sur TV
         const buffer = await client.downloadMedia(msg.media, {
             workers: 1,
         });
@@ -203,10 +199,8 @@ const playVideo = async (msg) => {
     }
 };
 
+// --- EVENTS ---
 
-// --- GESTIONNAIRES D'ÉVÉNEMENTS (Event Listeners) ---
-
-// 1. Sauvegarde Config
 document.getElementById('save-config-btn').addEventListener('click', () => {
     const idInput = document.getElementById('api-id').value;
     const hashInput = document.getElementById('api-hash').value;
@@ -214,13 +208,12 @@ document.getElementById('save-config-btn').addEventListener('click', () => {
     if (idInput && hashInput) {
         localStorage.setItem('teletv_api_id', idInput);
         localStorage.setItem('teletv_api_hash', hashInput);
-        location.reload(); // On recharge pour appliquer proprement
+        location.reload();
     } else {
         alert("Champs manquants");
     }
 });
 
-// 2. Envoi Code (Login étape 1)
 document.getElementById('send-code-btn').addEventListener('click', async () => {
     const phone = document.getElementById('phone').value;
     if(!phone) return alert("Numéro requis");
@@ -234,10 +227,10 @@ document.getElementById('send-code-btn').addEventListener('click', async () => {
         updateStatus("SMS envoyé !");
     } catch (e) {
         updateStatus("Erreur SMS: " + e.message);
+        console.error(e);
     }
 });
 
-// 3. Login (Login étape 2)
 document.getElementById('login-btn').addEventListener('click', async () => {
     const phone = document.getElementById('phone').value;
     const code = document.getElementById('code').value;
@@ -252,16 +245,15 @@ document.getElementById('login-btn').addEventListener('click', async () => {
             onError: (err) => updateStatus(err.message),
         });
         
-        // Sauvegarde session
         localStorage.setItem('telesession', client.session.save());
         updateStatus("Connecté !");
         loadChannels();
     } catch (e) {
         updateStatus("Échec Login: " + e.message);
+        console.error(e);
     }
 });
 
-// 4. Reset Config
 document.getElementById('reset-config-btn').addEventListener('click', () => {
     if(confirm("Tout effacer ?")) {
         localStorage.clear();
@@ -269,19 +261,14 @@ document.getElementById('reset-config-btn').addEventListener('click', () => {
     }
 });
 
-// 5. Navigation Clavier Global (Retour Arrière)
 document.addEventListener('keydown', (e) => {
     if (e.key === 'Backspace' || e.key === 'Escape') {
-        // Empêcher le retour navigateur par défaut si possible
         goBack();
     }
 });
 
-
-// --- POINT D'ENTRÉE MAIN ---
-
+// --- MAIN START ---
 const startApp = () => {
-    // Vérification Config LocalStorage
     const storedId = localStorage.getItem('teletv_api_id');
     const storedHash = localStorage.getItem('teletv_api_hash');
 
@@ -290,10 +277,8 @@ const startApp = () => {
         API_HASH = storedHash;
         initTelegram();
     } else {
-        // On reste sur l'écran de config
-        console.log("App needs config");
+        console.log("En attente de configuration");
     }
 };
 
-// Lancement
 startApp();
