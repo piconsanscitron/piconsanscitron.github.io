@@ -180,15 +180,19 @@ const loadVideos = async (entity) => {
             const attr = m.media?.document?.attributes?.find(a => a.duration);
             if(attr) dur = `${Math.floor(attr.duration/60)}:${(attr.duration%60).toString().padStart(2,'0')}`;
             
-            const title = m.message || "Vidéo sans titre";
+            // TITRE SIMPLE ET DIRECT (Comme v3)
+            const title = m.message && m.message.length > 0 ? m.message : "Vidéo sans titre";
             const size = (m.media.document.size/1024/1024).toFixed(0);
 
             el.innerHTML = `
-                <div class="thumb-placeholder"><span style="font-size:0.8rem; color:#666;">...</span></div>
-                <div class="meta">
-                    <div class="video-title">${title}</div>
-                    <div style="font-size:0.75rem; color:#aaa; margin-top:4px;">⏱ ${dur} | ${size} MB</div>
+                <div class="thumb-placeholder" style="height:120px; background:#222; display:flex; align-items:center; justify-content:center;">
+                    <span style="font-size:0.8rem; color:#666;">...</span>
+                </div>
+                <div class="meta" style="padding:10px; display:flex; flex-direction:column; gap:5px;">
+                    <div style="font-weight:bold; font-size:1rem; min-height:1.2em; overflow:hidden;">${title}</div>
+                    <div style="font-size:0.8rem; color:#aaa;">⏱ ${dur} | ${size} MB</div>
                 </div>`;
+                
             el.tabIndex = 0;
             el.onfocus = () => focusElement(el);
             
@@ -299,3 +303,4 @@ document.getElementById('search-input').onkeydown = (e) => {
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
+
