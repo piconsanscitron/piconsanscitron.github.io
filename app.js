@@ -320,17 +320,46 @@ const playStream = async (msg) => {
         if(cancelled) return;
 
         // 3. LECTURE
-        txt.textContent = "Lancement...";
-        
-        // --- FIX: On force le masquage du loader AVANT de lancer ---
+        // ... (Code précédent identique) ...
+
+        if(cancelled) return;
+
+        // 3. LECTURE OPTIMISÉE POUR TV
+        txt.textContent = "Prêt !";
+        bar.style.width = "100%";
+
+        // On cache le loader immédiatement
         loader.classList.add('hidden');
         
-        const file = await fileHandle.getFile();
-        const url = URL.createObjectURL(file);
-        
-        v.src = url;
-        v.play(); 
-        v.focus();
+        // ASTUCE TV: On attend 100ms pour laisser le temps au navigateur d'effacer le loader VISUELLEMENT
+        // avant de bloquer le processeur avec le chargement du fichier de 1Go+.
+        setTimeout(async () => {
+            try {
+                const file = await fileHandle.getFile();
+                const url = URL.createObjectURL(file);
+                
+                v.src = url;
+                v.load(); // Force le chargement
+                
+                // Promesse de lecture pour gérer les erreurs d'autoplay
+                const playPromise = v.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(_ => {
+                        v.focus();
+                    })
+                    .catch(error => {
+                        console.log("Auto-play bloqué, attente interaction utilisateur");
+                        v.focus(); // Si bloqué, le focus permet de lancer avec OK
+                    });
+                }
+            } catch (err) {
+                console.error("Erreur lecture différée:", err);
+                alert("Erreur lecture: " + err.message);
+                loader.classList.remove('hidden'); // On réaffiche si ça plante
+            }
+        }, 150); // Délai augmenté pour Fire Stick
+
+
 
     } catch (e) { 
         txt.textContent = "Err: " + e.message; 
@@ -367,5 +396,6 @@ document.getElementById('search-input').onkeydown = (e) => {
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
+
 
 
