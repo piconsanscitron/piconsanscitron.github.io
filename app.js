@@ -59,7 +59,7 @@ const startApp = async () => {
     try {
         client = new TelegramClient(new StringSession(session), API_ID, API_HASH, {
             connectionRetries: 5,
-            useWSS: true, // Important pour le web
+            useWSS: true,
         });
 
         await client.connect();
@@ -88,34 +88,55 @@ const startQRLogin = async () => {
     qrDiv.innerHTML = "";
 
     try {
-        log("Génération QR Code...");
-        
-        await client.signInUserWithQrCode({
-            apiId: API_ID,
-            apiHash: API_HASH,
-            qrCode: (code) => {
-                log("Nouveau QR Code reçu");
-                qrStatus.textContent = "Scannez ce code avec Telegram (Réglages > Appareils)";
-                qrDiv.innerHTML = "";
-                new QRCode(qrDiv, {
-                    text: `tg://login?token=${code.token.toString('base64url')}`,
-                    width: 256,
-                    height: 256
-                });
-            },
-            onError: (err) => {
-                log("Erreur QR: " + err.message);
-                qrStatus.textContent = "Erreur: " + err.message;
-                setTimeout(startQRLogin, 2000);
-            }
-        });
+        log("Génération du token QR...");
+        const result = await client.invoke(
+            new Api.auth.ExportLoginToken({
+                apiId: API_ID,
+                apiHash: API_HASH,
+            })
+        );
 
-        log("Login succès !");
-        localStorage.setItem('teletv_session', client.session.save());
-        loadChannels();
+        if (result instanceof Api.auth.LoginToken) {
+            log("Token généré !");
+            qrStatus.textContent = "Scannez ce code avec Telegram (Réglages > Appareils)";
+            qrDiv.innerHTML = "";
+            new QRCode(qrDiv, {
+                text: `tg://login?token=${result.token.toString('base64url')}`,
+                width: 256,
+                height: 256
+            });
+
+            // On attend que l'utilisateur scande et valide
+            const interval = setInterval(async () => {
+                try {
+                    const accept = await client.invoke(
+                        new Api.auth.AcceptLoginToken({
+                            token: result.token,
+                        })
+                    );
+                    if (accept instanceof Api.auth.Authorization) {
+                        log("Authentification réussie !");
+                        clearInterval(interval);
+                        localStorage.setItem('teletv_session', client.session.save());
+                        loadChannels();
+                    }
+                } catch (err) {
+                    if (err.errorMessage === 'SESSION_PASSWORD_NEEDED') {
+                        log("Mot de passe requis");
+                        clearInterval(interval);
+                        // Ici on devrait demander le mot de passe
+                        alert("Mot de passe 2FA requis");
+                    }
+                }
+            }, 2000); // Vérifie toutes les 2 secondes
+
+        } else {
+            log("Échec de génération du token QR");
+            qrStatus.textContent = "Échec : " + result.errorMessage;
+        }
 
     } catch (e) {
-        log("Session expirée ou erreur: " + e.message);
+        log("Erreur QR: " + e.message);
         setTimeout(startQRLogin, 2000);
     }
 };
