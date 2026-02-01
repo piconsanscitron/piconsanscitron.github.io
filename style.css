@@ -1,0 +1,73 @@
+:root {
+    --bg-color: #1a1a1a;
+    --focus-color: #0088cc; /* Telegram Blue */
+    --text-color: #ffffff;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    font-family: sans-serif;
+    margin: 0;
+    overflow: hidden; /* Pas de scrollbar sur TV, on scroll le contenu */
+    font-size: 2vh; /* Unité relative à la hauteur pour l'échelle TV */
+}
+
+.screen {
+    display: none;
+    height: 100vh;
+    padding: 2rem;
+    box-sizing: border-box;
+}
+
+.screen.active {
+    display: flex;
+    flex-direction: column;
+}
+
+.hidden { display: none !important; }
+
+/* Grid layout pour TV */
+.grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 1.5rem;
+    overflow-y: auto;
+    padding: 1rem;
+}
+
+/* Éléments interactifs */
+.card {
+    background: #333;
+    padding: 1rem;
+    border-radius: 8px;
+    text-align: center;
+    cursor: pointer;
+    border: 3px solid transparent;
+    transition: transform 0.2s;
+}
+
+/* Gestion du focus (Navigation Télécommande) */
+:focus {
+    outline: none;
+    border-color: var(--focus-color);
+    transform: scale(1.05);
+    background-color: #444;
+    box-shadow: 0 0 20px rgba(0, 136, 204, 0.5);
+}
+
+input {
+    font-size: 1.5rem;
+    padding: 0.5rem;
+    margin-bottom: 1rem;
+    width: 100%;
+    background: #222;
+    color: white;
+    border: 2px solid #555;
+}
+
+#main-player {
+    width: 100%;
+    height: 100%;
+    background: black;
+}

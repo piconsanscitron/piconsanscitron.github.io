@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TeleTV Player</title>
+    <link rel="stylesheet" href="style.css">
+    <!-- Import GramJS via CDN pour éviter une étape de build complexe pour ce test -->
+    <script src="https://cdn.jsdelivr.net/npm/telegram@2.19.7/dist/browser/index.js"></script>
+</head>
+<body>
+    <div id="app">
+        <!-- Écran de Connexion -->
+        <section id="auth-screen" class="screen active">
+            <h1>TeleTV Login</h1>
+            <div class="input-group">
+                <input type="text" id="phone" placeholder="+33612345678" tabindex="0">
+                <button id="send-code-btn" tabindex="0">Recevoir le code</button>
+            </div>
+            <div class="input-group hidden" id="code-group">
+                <input type="text" id="code" placeholder="12345" tabindex="0">
+                <input type="password" id="password" placeholder="Mot de passe (2FA)" tabindex="0">
+                <button id="login-btn" tabindex="0">Se connecter</button>
+            </div>
+            <div id="status">Prêt.</div>
+        </section>
+
+        <!-- Liste des Canaux -->
+        <section id="channels-screen" class="screen hidden">
+            <h2>Vos Canaux</h2>
+            <div id="channels-grid" class="grid"></div>
+        </section>
+
+        <!-- Liste des Vidéos -->
+        <section id="videos-screen" class="screen hidden">
+            <h2 id="channel-title">Vidéos</h2>
+            <div id="videos-grid" class="grid"></div>
+        </section>
+
+        <!-- Lecteur Vidéo -->
+        <section id="player-screen" class="screen hidden">
+            <video id="main-player" controls></video>
+        </section>
+    </div>
+
+    <script src="app.js"></script>
+</body>
+</html>
