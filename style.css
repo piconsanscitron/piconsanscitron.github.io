@@ -79,10 +79,14 @@ h1, h2, h3 { margin-top: 0; }
 }
 
 .meta {
-    padding: 10px; height: 35%; width: 100%;
-    display: flex; flex-direction: column; justify-content: space-between;
+    padding: 10px;
+    /* On retire height: 35% fixe pour laisser le texte s'afficher */
+    width: 100%;
+    display: flex; flex-direction: column; justify-content: flex-start;
     background: rgba(30, 30, 30, 0.95);
+    flex-grow: 1; /* Prend l'espace restant */
 }
+
 
 .video-title {
     font-weight: bold; font-size: 0.9rem;
@@ -145,3 +149,4 @@ button:focus, input:focus { border-color: var(--focus-color); background: #444; 
 .progress-container { width: 60%; height: 10px; background: #444; margin: 20px 0; border-radius: 5px; }
 .progress-bar { height: 100%; background: var(--focus-color); width: 0%; border-radius: 5px; }
 #player-screen { padding: 0; height: 100vh; overflow: hidden; background: black; }
+
