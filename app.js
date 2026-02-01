@@ -5,11 +5,10 @@ let client, API_ID, API_HASH;
 let historyStack = [];
 let wakeLock = null;
 
-// UI LOG
 const log = (msg) => {
     console.log(msg);
     const el = document.getElementById('status');
-    if(el) { el.textContent = msg; el.style.display = 'block'; setTimeout(()=>el.style.display='none', 4000); }
+    if(el) { el.textContent = msg; el.style.display='block'; setTimeout(()=>el.style.display='none', 4000); }
 };
 
 // --- NAVIGATION ---
@@ -29,16 +28,17 @@ const showScreen = (id) => {
     const t = document.getElementById(id);
     if(t) {
         t.classList.remove('hidden');
-        t.classList.add('active');
+        t.classList.add('active'); // CSS Flex s'appliquera ici pour config/auth
         window.scrollTo(0, 0);
         
-        // PUSH STATE POUR LE BOUTON RETOUR PHYSIQUE
+        // Push state pour le bouton Back physique
         history.pushState({ screen: id }, null, "");
 
         setTimeout(() => {
             let f;
             if (id === 'channels-screen') f = document.getElementById('btn-search-nav');
             else if (id === 'player-screen') f = document.getElementById('main-player');
+            else if (id === 'search-screen') f = document.getElementById('search-input');
             else f = t.querySelector('[tabindex="0"]');
             focusElement(f);
         }, 200);
@@ -46,24 +46,16 @@ const showScreen = (id) => {
 };
 
 const goBack = () => {
-    // Si on est à la racine, on ne fait rien
     if(document.getElementById('channels-screen').classList.contains('active')) return;
 
     if(historyStack.length > 0) {
         const prev = historyStack.pop();
-        
-        // Arrêt propre Vidéo
         const v = document.getElementById('main-player');
         if(v) { v.pause(); v.removeAttribute('src'); v.load(); }
-        
-        // Arrêt Loader
         document.getElementById('video-loader').classList.add('hidden');
         if(wakeLock) wakeLock.release();
-        
         showScreen(prev);
-    } else {
-        showScreen('channels-screen');
-    }
+    } else showScreen('channels-screen');
 };
 
 const navigateTo = (id) => {
@@ -72,14 +64,10 @@ const navigateTo = (id) => {
     showScreen(id);
 };
 
-// --- ECOUTEUR BOUTON RETOUR PHYSIQUE ---
-window.onpopstate = (event) => {
-    // Empêche le navigateur de revenir en arrière dans l'historique URL réel
-    // Et lance notre fonction interne
+window.onpopstate = (e) => {
     history.pushState(null, null, window.location.href);
     goBack();
 };
-
 
 // --- TELEGRAM ---
 const startApp = async () => {
@@ -87,16 +75,16 @@ const startApp = async () => {
     const sHash = localStorage.getItem('teletv_hash');
     const session = localStorage.getItem('teletv_session') || "";
 
-    // Hack historique initial
     history.replaceState({ screen: 'init' }, null, "");
     history.pushState({ screen: 'init' }, null, "");
 
     if(!sId || !sHash) { 
-        document.getElementById('config-screen').classList.add('active'); // Force display sans anim
+        document.getElementById('config-screen').classList.add('active'); 
+        document.getElementById('config-screen').classList.remove('hidden');
         return; 
     }
     
-    // Si config ok, on cache config
+    // Cache config explicitement
     document.getElementById('config-screen').classList.remove('active');
     document.getElementById('config-screen').classList.add('hidden');
     
@@ -107,22 +95,37 @@ const startApp = async () => {
         client = new TelegramClient(new StringSession(session), API_ID, API_HASH, { connectionRetries: 5, useWSS: true });
         await client.connect();
         if (await client.checkAuthorization()) loadChannels(); else startQRLogin();
-    } catch (e) { log("Err: " + e.message); if(e.message.includes("API_ID")) localStorage.clear(); }
+    } catch (e) { 
+        log("Err: " + e.message); 
+        if(e.message.includes("API_ID")) { localStorage.clear(); location.reload(); }
+        else {
+            // Si erreur connexion, retour config
+            document.getElementById('config-screen').classList.add('active'); 
+            document.getElementById('config-screen').classList.remove('hidden');
+        }
+    }
 };
 
 const startQRLogin = async () => {
     showScreen('auth-screen');
     const qrDiv = document.getElementById('qrcode'); qrDiv.innerHTML = "";
+    document.getElementById('qr-status').textContent = "Génération...";
+
     try {
         const res = await client.invoke(new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] }));
         if (res instanceof Api.auth.LoginTokenSuccess) { loadChannels(); return; }
+
         const token = res.token.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
         new QRCode(qrDiv, { text: `tg://login?token=${token}`, width: 256, height: 256 });
+        document.getElementById('qr-status').textContent = "Scannez avec Telegram";
+
         const check = async () => {
             try {
                 const r = await client.invoke(new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] }));
-                if (r instanceof Api.auth.LoginTokenSuccess) { localStorage.setItem('teletv_session', client.session.save()); loadChannels(); }
-                else setTimeout(check, 2000);
+                if (r instanceof Api.auth.LoginTokenSuccess) { 
+                    localStorage.setItem('teletv_session', client.session.save()); 
+                    loadChannels(); 
+                } else setTimeout(check, 2000);
             } catch (e) { setTimeout(check, 3000); }
         };
         setTimeout(check, 2000);
@@ -136,12 +139,14 @@ const loadChannels = async () => {
     try {
         const dialogs = await client.getDialogs({ limit: 100 });
         grid.innerHTML = "";
+        
+        // Filtre et Tri
         const filtered = dialogs.filter(d => (d.isChannel || d.isGroup) && !d.archived).sort((a,b) => b.pinned - a.pinned);
         
         filtered.forEach(d => {
             const el = document.createElement('div');
             el.className = 'card';
-            el.innerHTML = `<div style="text-align:center; font-weight:bold;">${d.pinned ? '📌 ' : ''}${d.title}</div>`;
+            el.innerHTML = `<div style="font-weight:bold;">${d.pinned ? '📌 ' : ''}${d.title}</div>`;
             el.tabIndex = 0;
             el.onfocus = () => focusElement(el);
             el.onclick = () => loadVideos(d.entity);
@@ -156,7 +161,7 @@ const loadVideos = async (entity) => {
     navigateTo('videos-screen');
     const grid = document.getElementById('videos-grid');
     grid.innerHTML = "Chargement...";
-    document.getElementById('channel-title').textContent = entity.title;
+    document.getElementById('channel-title').textContent = entity.title || "Vidéos";
 
     try {
         const msgs = await client.getMessages(entity, { limit: 40, filter: new Api.InputMessagesFilterVideo() });
@@ -174,7 +179,7 @@ const loadVideos = async (entity) => {
                 <div class="thumb-placeholder">...</div>
                 <div class="meta">
                     <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.message || "Vidéo"}</div>
-                    <div style="font-size:0.75rem; color:#aaa; margin-top:5px;">⏱ ${dur} | ${(m.media.document.size/1024/1024).toFixed(0)} MB</div>
+                    <div style="font-size:0.75rem; color:#aaa;">⏱ ${dur} | ${(m.media.document.size/1024/1024).toFixed(0)} MB</div>
                 </div>`;
             el.tabIndex = 0;
             el.onfocus = () => focusElement(el);
@@ -195,6 +200,38 @@ const loadVideos = async (entity) => {
     } catch (e) { log("Err: " + e.message); }
 };
 
+// --- RECHERCHE ---
+const performSearch = async () => {
+    const q = document.getElementById('search-input').value;
+    if(!q || q.length < 3) { log("3 chars min"); return; }
+    
+    const resGrid = document.getElementById('search-results');
+    resGrid.innerHTML = "Cherche...";
+    
+    try {
+        // Recherche Globale
+        const res = await client.invoke(new Api.contacts.Search({ q: q, limit: 20 }));
+        resGrid.innerHTML = "";
+        
+        const all = [...res.chats, ...res.users].filter(c => c.title || c.firstName);
+        
+        if(all.length === 0) { resGrid.innerHTML = "Aucun résultat"; return; }
+
+        all.forEach(c => {
+            const el = document.createElement('div');
+            el.className = 'card';
+            el.textContent = c.title || c.firstName;
+            el.tabIndex = 0;
+            el.onfocus = () => focusElement(el);
+            el.onclick = () => loadVideos(c);
+            el.onkeydown = (e) => e.key === 'Enter' && loadVideos(c);
+            resGrid.appendChild(el);
+        });
+        setTimeout(() => focusElement(resGrid.firstChild), 200);
+    } catch(e) { log("Err: " + e.message); }
+};
+
+// --- STREAMING ---
 const playStream = async (msg) => {
     navigateTo('player-screen');
     const v = document.getElementById('main-player');
@@ -241,11 +278,18 @@ const playStream = async (msg) => {
 
 const clearCache = async () => { try { const r = await navigator.storage.getDirectory(); await r.removeEntry('temp_video.mp4'); alert("Vidé."); } catch(e){alert("Déjà vide");} };
 
+// Events
 document.getElementById('save-config-btn').onclick = () => { localStorage.setItem('teletv_id', document.getElementById('api-id').value); localStorage.setItem('teletv_hash', document.getElementById('api-hash').value); location.reload(); };
 document.getElementById('btn-search-nav').onclick = () => navigateTo('search-screen');
 document.getElementById('btn-clear-cache').onclick = clearCache;
 document.getElementById('btn-reload').onclick = () => location.reload();
 document.getElementById('btn-logout').onclick = () => { if(confirm("Déco?")) { localStorage.clear(); clearCache(); location.reload(); }};
+document.getElementById('btn-do-search').onclick = performSearch;
+
+// Fix Recherche Touche Entrée
+document.getElementById('search-input').onkeydown = (e) => {
+    if(e.key === 'Enter') performSearch();
+};
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
