@@ -5,7 +5,7 @@ const { StringSession } = sessions;
 let client;
 let API_ID, API_HASH;
 let historyStack = [];
-let wakeLock = null; // Pour empêcher la veille
+let wakeLock = null;
 
 // --- UI HELPERS ---
 const log = (msg) => {
@@ -18,83 +18,95 @@ const log = (msg) => {
     }
 };
 
-// --- FIX NAVIGATION TV (SCROLL AGRESSIF) ---
+// --- FIX SCROLL FIRE TV (SILK) ---
 const focusElement = (el) => {
-    if(el) {
-        el.focus();
-        // Méthode 1: Standard
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        
-        // Méthode 2: Fallback manuel pour vieilles TV
-        const rect = el.getBoundingClientRect();
-        const isInView = (rect.top >= 0) && (rect.bottom <= window.innerHeight);
-        if (!isInView) {
-            window.scrollTo({
-                top: window.scrollY + rect.top - (window.innerHeight / 2),
-                behavior: 'smooth'
-            });
-        }
+    if(!el) return;
+
+    // 1. Force le focus navigateur
+    el.focus({ preventScroll: true }); // On gère le scroll nous-mêmes
+
+    // 2. Calcul de position
+    const rect = el.getBoundingClientRect();
+    const viewportHeight = window.innerHeight;
+    
+    // Marge de sécurité (les barres d'outils Silk prennent de la place en haut/bas)
+    const margin = 100; 
+
+    // Est-ce que l'élément est hors champ ?
+    const isAbove = rect.top < margin;
+    const isBelow = rect.bottom > (viewportHeight - margin);
+
+    if (isAbove || isBelow) {
+        // Calcul du scroll nécessaire pour centrer l'élément
+        const elementCenter = rect.top + (rect.height / 2);
+        const screenCenter = viewportHeight / 2;
+        const offset = elementCenter - screenCenter;
+
+        window.scrollBy({
+            top: offset,
+            behavior: 'smooth'
+        });
     }
 };
 
 // --- ANTI-VEILLE ---
 const requestWakeLock = async () => {
     if ('wakeLock' in navigator) {
-        try {
-            wakeLock = await navigator.wakeLock.request('screen');
-            console.log('Wake Lock actif');
-        } catch (err) {
-            console.error(`Wake Lock erreur: ${err.name}, ${err.message}`);
-        }
+        try { wakeLock = await navigator.wakeLock.request('screen'); } 
+        catch (err) { console.log("WakeLock Fail", err); }
     }
 };
 const releaseWakeLock = () => {
-    if (wakeLock !== null) {
-        wakeLock.release().then(() => { wakeLock = null; });
-    }
+    if (wakeLock) { wakeLock.release(); wakeLock = null; }
 };
 
 // --- NAVIGATION ---
 const showScreen = (id) => {
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'hidden'));
+    // Cache tous les écrans
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
+    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+    
+    // Affiche le bon
     const t = document.getElementById(id);
     if(t) {
         t.classList.remove('hidden');
         t.classList.add('active');
         
-        // Hack pour mapper le bouton Back du navigateur
+        // Push State pour le bouton Back physique
         history.pushState({ screen: id }, null, "");
         
+        // Scroll en haut lors du changement d'écran
+        window.scrollTo(0, 0);
+
+        // Focus intelligent avec délai pour Silk
         setTimeout(() => {
             if(id === 'channels-screen') {
+                // Focus sur la recherche par défaut pour reset la position
                 focusElement(document.getElementById('btn-search-nav'));
             } else if (id === 'player-screen') {
                 focusElement(document.getElementById('main-player'));
             } else {
+                // Premier élément focusable trouvé
                 const f = t.querySelector('[tabindex="0"]');
                 focusElement(f);
             }
-        }, 150);
+        }, 300); // Délai augmenté pour Fire TV
     }
 };
 
 const goBack = () => {
-    // Si on est déjà à la racine, on ne fait rien (ou on laisse le navigateur quitter)
+    // Si on est à la racine, on ne fait rien
     if(document.getElementById('channels-screen').classList.contains('active')) return;
 
     if(historyStack.length > 0) {
         const prev = historyStack.pop();
         
-        // Nettoyage Player
+        // Reset Player
         const v = document.getElementById('main-player');
-        if(v) { 
-            v.pause(); 
-            v.removeAttribute('src'); 
-            v.load();
-        }
+        if(v) { v.pause(); v.removeAttribute('src'); v.load(); }
+        
         document.getElementById('video-loader').classList.add('hidden');
-        releaseWakeLock(); // On relâche la veille
+        releaseWakeLock();
         
         showScreen(prev);
     } else {
@@ -108,19 +120,17 @@ const navigateTo = (id) => {
     showScreen(id);
 };
 
-// Gestionnaire bouton Back navigateur (et télécommande)
-window.onpopstate = (event) => {
-    // Si l'utilisateur appuie sur Back, on intercepte
-    // On empêche le retour arrière réel du navigateur et on utilise notre logique
-    history.pushState(null, null, window.location.href);
+// Interception Bouton Back Télécommande
+window.onpopstate = (e) => {
+    e.preventDefault();
     goBack();
+    // On repousse un state pour ne jamais sortir de l'app par erreur
+    history.pushState(null, null, window.location.href);
 };
 
-// --- CACHE ---
+// --- CACHE OPFS ---
 const clearVideoCache = async () => {
-    if (!navigator.storage || !navigator.storage.getDirectory) {
-        alert("Non supporté."); return;
-    }
+    if (!navigator.storage?.getDirectory) { alert("Non supporté"); return; }
     try {
         const root = await navigator.storage.getDirectory();
         await root.removeEntry('temp_video.mp4');
@@ -129,7 +139,7 @@ const clearVideoCache = async () => {
 };
 
 const checkDiskUsage = async () => {
-    if (navigator.storage && navigator.storage.estimate) {
+    if (navigator.storage?.estimate) {
         const { usage } = await navigator.storage.estimate();
         const el = document.getElementById('disk-usage');
         if(el) el.textContent = `Cache: ${(usage/1024/1024).toFixed(0)} MB`;
@@ -142,8 +152,9 @@ const startApp = async () => {
     const sHash = localStorage.getItem('teletv_hash');
     const session = localStorage.getItem('teletv_session') || "";
 
-    // Hack initial pour l'historique
+    // Hack historique
     history.replaceState({ screen: 'init' }, null, "");
+    history.pushState({ screen: 'init' }, null, "");
 
     if(!sId || !sHash) { showScreen('config-screen'); return; }
 
@@ -162,7 +173,7 @@ const startApp = async () => {
     } catch (e) {
         log("Erreur: " + e.message);
         if(e.message.includes("API_ID")) {
-            if(confirm("Reset Config?")) { localStorage.clear(); location.reload(); }
+            if(confirm("Config HS. Reset?")) { localStorage.clear(); location.reload(); }
         }
     }
 };
@@ -173,25 +184,22 @@ const startQRLogin = async () => {
     qrDiv.innerHTML = "";
 
     try {
-        const result = await client.invoke(
-            new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] })
-        );
-        if (result instanceof Api.auth.LoginTokenSuccess) { loadChannels(); return; }
+        const res = await client.invoke(new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] }));
+        if (res instanceof Api.auth.LoginTokenSuccess) { loadChannels(); return; }
 
-        const base64 = result.token.toString('base64');
-        const tokenString = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-        new QRCode(qrDiv, { text: `tg://login?token=${tokenString}`, width: 256, height: 256 });
+        const token = res.token.toString('base64').replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        new QRCode(qrDiv, { text: `tg://login?token=${token}`, width: 256, height: 256 });
 
-        const checkToken = async () => {
+        const check = async () => {
             try {
                 const r = await client.invoke(new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] }));
                 if (r instanceof Api.auth.LoginTokenSuccess) {
                     localStorage.setItem('teletv_session', client.session.save());
                     loadChannels();
-                } else setTimeout(checkToken, 2000); 
-            } catch (err) { setTimeout(checkToken, 3000); }
+                } else setTimeout(check, 2000);
+            } catch (e) { setTimeout(check, 3000); }
         };
-        setTimeout(checkToken, 2000);
+        setTimeout(check, 2000);
     } catch (e) { log("Erreur QR: " + e.message); setTimeout(startQRLogin, 5000); }
 };
 
@@ -215,15 +223,14 @@ const loadChannels = async () => {
             el.className = 'card';
             el.innerHTML = `<div>${d.pinned ? '📌 ' : ''}${d.title}</div>`;
             el.tabIndex = 0;
-            // FIX SCROLL
-            el.onfocus = () => focusElement(el);
+            // FIX SCROLL: Listener explicite
+            el.addEventListener('focus', () => focusElement(el));
             
-            const open = () => loadVideos(d.entity);
-            el.onclick = open;
-            el.onkeydown = (e) => e.key === 'Enter' && open();
+            el.onclick = () => loadVideos(d.entity);
+            el.onkeydown = (e) => e.key === 'Enter' && loadVideos(d.entity);
             grid.appendChild(el);
         });
-        setTimeout(() => focusElement(grid.firstChild || document.getElementById('btn-search-nav')), 200);
+        setTimeout(() => focusElement(grid.firstChild || document.getElementById('btn-search-nav')), 300);
 
     } catch (e) { log("Erreur: " + e.message); }
 };
@@ -235,17 +242,13 @@ const loadVideos = async (entity) => {
     document.getElementById('channel-title').textContent = entity.title || "Vidéos";
 
     try {
-        const msgs = await client.getMessages(entity, {
-            limit: 20, filter: new Api.InputMessagesFilterVideo()
-        });
-
+        const msgs = await client.getMessages(entity, { limit: 30, filter: new Api.InputMessagesFilterVideo() });
         grid.innerHTML = "";
         if(!msgs || msgs.length === 0) { grid.innerHTML = "Vide"; return; }
 
         for (const m of msgs) {
             const el = document.createElement('div');
             el.className = 'card video-card';
-            
             let dur = "";
             const attr = m.media?.document?.attributes?.find(a => a.duration);
             if(attr) dur = `${Math.floor(attr.duration/60)}:${(attr.duration%60).toString().padStart(2,'0')}`;
@@ -253,37 +256,31 @@ const loadVideos = async (entity) => {
             el.innerHTML = `
                 <div class="thumb-placeholder" style="height:120px; background:#222; display:flex; align-items:center; justify-content:center;">...</div>
                 <div class="meta" style="padding:10px;">
-                    <div style="font-weight:bold; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
-                        ${m.message || "Vidéo"}
-                    </div>
+                    <div style="font-weight:bold; font-size:0.9rem; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;">${m.message || "Vidéo"}</div>
                     <div style="font-size:0.7rem; color:#aaa;">⏱ ${dur} | ${(m.media.document.size/1024/1024).toFixed(0)} MB</div>
                 </div>
             `;
             el.tabIndex = 0;
-            el.onfocus = () => focusElement(el);
+            el.addEventListener('focus', () => focusElement(el));
 
             const play = () => playVideoStreaming(m);
             el.onclick = play;
             el.onkeydown = (e) => e.key === 'Enter' && play();
-            
             grid.appendChild(el);
 
             if(m.media.document.thumbs) {
                 const thumb = m.media.document.thumbs.find(t => t.className === 'PhotoSize');
                 if(thumb) {
-                    client.downloadMedia(m.media, { thumb: thumb }).then(buffer => {
-                        const url = URL.createObjectURL(new Blob([buffer]));
-                        el.querySelector('.thumb-placeholder').innerHTML = `<img src="${url}" style="width:100%; height:100%; object-fit:cover;">`;
-                    }).catch(() => {});
+                    client.downloadMedia(m.media, { thumb }).then(buf => {
+                        el.querySelector('.thumb-placeholder').innerHTML = `<img src="${URL.createObjectURL(new Blob([buf]))}" style="width:100%; height:100%; object-fit:cover;">`;
+                    }).catch(()=>{});
                 }
             }
         }
-        setTimeout(() => focusElement(grid.firstChild), 200);
-
+        setTimeout(() => focusElement(grid.firstChild), 300);
     } catch (e) { log("Erreur: " + e.message); }
 };
 
-// --- STREAMING AVANCÉ AVEC LOADER ---
 const playVideoStreaming = async (msg) => {
     navigateTo('player-screen');
     const v = document.getElementById('main-player');
@@ -292,23 +289,17 @@ const playVideoStreaming = async (msg) => {
     const txt = document.getElementById('loader-text');
     const btnCancel = document.getElementById('btn-cancel-load');
     
-    // Reset UI
     v.src = "";
     loader.classList.remove('hidden');
     bar.style.width = '0%';
-    txt.textContent = "Initialisation...";
-    
-    // Activer Anti-Veille
+    txt.textContent = "Init...";
     requestWakeLock();
     
-    // Gestion Annulation
     let isCancelled = false;
     btnCancel.onclick = () => { isCancelled = true; goBack(); };
-    btnCancel.focus();
+    setTimeout(() => btnCancel.focus(), 200);
 
-    if (!navigator.storage || !navigator.storage.getDirectory) {
-        alert("Stockage non dispo. Impossible de lire."); return;
-    }
+    if (!navigator.storage?.getDirectory) { alert("Stockage HS"); return; }
 
     try {
         const root = await navigator.storage.getDirectory();
@@ -318,45 +309,27 @@ const playVideoStreaming = async (msg) => {
         const size = msg.media.document.size;
         let downloaded = 0;
         
-        txt.textContent = "Téléchargement (0%)...";
-
-        for await (const chunk of client.iterDownload({
-            file: msg.media,
-            requestSize: 1024 * 1024,
-        })) {
+        for await (const chunk of client.iterDownload({ file: msg.media, requestSize: 1024 * 1024 })) {
             if(isCancelled) { await writable.close(); return; }
-            
             await writable.write(chunk);
             downloaded += chunk.length;
-            
-            // Mise à jour Barre
             const pct = Math.round((downloaded / size) * 100);
             bar.style.width = `${pct}%`;
-            txt.textContent = `Téléchargement (${pct}%)...`;
+            txt.textContent = `DL: ${pct}%`;
         }
-        
         await writable.close();
-        
         if(isCancelled) return;
         
-        // Lancement
-        txt.textContent = "Prêt !";
-        loader.classList.add('hidden'); // Cache le loader
-        
-        const file = await fileHandle.getFile();
-        v.src = URL.createObjectURL(file);
+        loader.classList.add('hidden');
+        v.src = URL.createObjectURL(await fileHandle.getFile());
         v.play();
         v.focus();
-
     } catch(e) {
-        txt.textContent = "Erreur: " + e.message;
-        if(e.name === 'QuotaExceededError') {
-            if(confirm("Disque plein. Vider ?")) clearVideoCache();
-        }
+        txt.textContent = "Err: " + e.message;
+        if(e.name === 'QuotaExceededError') { if(confirm("Disque plein. Vider?")) clearVideoCache(); }
     }
 };
 
-// --- CONFIG ---
 const btnSave = document.getElementById('save-config-btn');
 if(btnSave) btnSave.onclick = () => {
     localStorage.setItem('teletv_id', document.getElementById('api-id').value);
@@ -367,33 +340,28 @@ if(btnSave) btnSave.onclick = () => {
 document.getElementById('btn-search-nav').onclick = () => navigateTo('search-screen');
 document.getElementById('btn-clear-cache').onclick = clearVideoCache;
 document.getElementById('btn-reload').onclick = () => location.reload();
-document.getElementById('btn-logout').onclick = () => {
-    if(confirm("Déco ?")) { localStorage.clear(); clearVideoCache(); location.reload(); }
-};
+document.getElementById('btn-logout').onclick = () => { if(confirm("Déco?")) { localStorage.clear(); clearVideoCache(); location.reload(); }};
 document.getElementById('btn-do-search').onclick = async () => {
     const q = document.getElementById('search-input').value;
     const resGrid = document.getElementById('search-results');
     resGrid.innerHTML = "Cherche...";
     try {
-        const res = await client.invoke(new Api.contacts.Search({ q: q, limit: 10 }));
+        const res = await client.invoke(new Api.contacts.Search({ q, limit: 10 }));
         resGrid.innerHTML = "";
-        const all = [...res.chats, ...res.users].filter(c => c.title || c.firstName);
-        all.forEach(c => {
+        [...res.chats, ...res.users].filter(c => c.title || c.firstName).forEach(c => {
             const el = document.createElement('div');
             el.className = 'card';
             el.textContent = c.title || c.firstName;
             el.tabIndex = 0;
-            el.onfocus = () => focusElement(el);
+            el.addEventListener('focus', () => focusElement(el));
             el.onclick = () => loadVideos(c);
             el.onkeydown = (e) => e.key === 'Enter' && loadVideos(c);
             resGrid.appendChild(el);
         });
-        setTimeout(() => focusElement(resGrid.firstChild), 100);
+        setTimeout(() => focusElement(resGrid.firstChild), 200);
     } catch(e) { log("Erreur: " + e.message); }
 };
 
-document.onkeydown = (e) => {
-    if(e.key === 'Backspace' || e.key === 'Escape') goBack();
-};
+document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
