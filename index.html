@@ -20,22 +20,25 @@
 </head>
 <body>
     <div id="app">
-        <!-- Config -->
-        <section id="config-screen" class="screen active">
-            <h1>Configuration</h1>
-            <div class="input-group">
-                <input type="text" id="api-id" placeholder="API ID" tabindex="0">
-                <input type="text" id="api-hash" placeholder="API Hash" tabindex="0">
-                <button id="save-config-btn" tabindex="0">Continuer</button>
-            </div>
-        </section>
 
-        <!-- Auth QR -->
-        <section id="auth-screen" class="screen hidden" style="text-align: center;">
-            <h1>Connexion</h1>
-            <div id="qrcode" style="background: white; padding: 10px; display: inline-block; margin: 20px;"></div>
-            <div id="qr-status">Génération...</div>
-        </section>
+
+<section id="config-screen" class="screen active">
+    <div class="input-group">
+        <h1>Configuration</h1>
+        <input type="text" id="api-id" placeholder="API ID" tabindex="0">
+        <input type="text" id="api-hash" placeholder="API Hash" tabindex="0">
+        <button id="save-config-btn" tabindex="0">Sauvegarder</button>
+    </div>
+</section>
+
+<section id="auth-screen" class="screen hidden">
+    <div class="input-group" style="align-items: center;">
+        <h1>Scanner le QR</h1>
+        <div id="qrcode" style="background: white; padding: 10px; margin: 20px;"></div>
+        <button id="btn-cancel-auth" tabindex="0">Annuler</button>
+    </div>
+</section>
+
 
         <!-- Canaux (Menu Principal) -->
         <section id="channels-screen" class="screen hidden">
@@ -91,4 +94,5 @@
     <script type="module" src="app.js"></script>
 </body>
 </html>
+
 
