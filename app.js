@@ -242,7 +242,7 @@ const performSearch = async () => {
     } catch(e) { log("Err: " + e.message); }
 };
 
-// --- STREAMING ---
+// --- STREAMING INTELLIGENT AVEC CACHE ---
 const playStream = async (msg) => {
     navigateTo('player-screen');
     const v = document.getElementById('main-player');
@@ -251,7 +251,13 @@ const playStream = async (msg) => {
     const txt = document.getElementById('loader-text');
     const btnCancel = document.getElementById('btn-cancel-load');
     
-    v.src = ""; loader.classList.remove('hidden'); bar.style.width = "0%"; txt.textContent = "Init...";
+    // Reset UI
+    v.src = ""; 
+    loader.classList.remove('hidden'); 
+    bar.style.width = "0%"; 
+    txt.textContent = "Vérification du cache...";
+    
+    // Anti-veille
     if('wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
     
     let cancelled = false;
@@ -262,32 +268,90 @@ const playStream = async (msg) => {
 
     try {
         const root = await navigator.storage.getDirectory();
-        const handle = await root.getFileHandle('temp_video.mp4', { create: true });
-        const writable = await handle.createWritable();
-        const size = msg.media.document.size;
-        let dl = 0;
-
-        for await (const chunk of client.iterDownload({ file: msg.media, requestSize: 1024*1024 })) {
-            if(cancelled) { await writable.close(); return; }
-            await writable.write(chunk);
-            dl += chunk.length;
-            const pct = Math.round((dl/size)*100);
-            bar.style.width = `${pct}%`;
-            txt.textContent = `DL: ${pct}%`;
-        }
-        await writable.close();
-        if(cancelled) return;
+        const currentMsgId = msg.id.toString();
+        const cachedMsgId = localStorage.getItem('cached_video_id');
         
+        // 1. VÉRIFICATION DU CACHE
+        let fileHandle;
+        let fileExists = false;
+
+        try {
+            // On essaie d'ouvrir le fichier existant sans le créer
+            fileHandle = await root.getFileHandle('temp_video.mp4'); 
+            // On vérifie si c'est la bonne vidéo
+            if (cachedMsgId === currentMsgId) {
+                const fileCheck = await fileHandle.getFile();
+                if (fileCheck.size > 0) {
+                    fileExists = true;
+                    txt.textContent = "Fichier trouvé en cache !";
+                    bar.style.width = "100%";
+                }
+            }
+        } catch(e) {
+            // Fichier inexistant, on continue vers le téléchargement
+            fileExists = false;
+        }
+
+        // 2. TÉLÉCHARGEMENT (Si pas en cache)
+        if (!fileExists) {
+            txt.textContent = "Démarrage téléchargement...";
+            // create: true va écraser l'ancien fichier
+            fileHandle = await root.getFileHandle('temp_video.mp4', { create: true });
+            const writable = await fileHandle.createWritable();
+            
+            const size = msg.media.document.size;
+            let dl = 0;
+
+            for await (const chunk of client.iterDownload({ file: msg.media, requestSize: 1024*1024 })) {
+                if(cancelled) { await writable.close(); return; }
+                await writable.write(chunk);
+                dl += chunk.length;
+                
+                const pct = Math.round((dl/size)*100);
+                bar.style.width = `${pct}%`;
+                txt.textContent = `Téléchargement: ${pct}%`;
+            }
+            await writable.close();
+            
+            // Sauvegarde de l'ID pour la prochaine fois
+            localStorage.setItem('cached_video_id', currentMsgId);
+        }
+
+        if(cancelled) return;
+
+        // 3. LECTURE
+        txt.textContent = "Lancement...";
+        
+        // --- FIX: On force le masquage du loader AVANT de lancer ---
         loader.classList.add('hidden');
-        v.src = URL.createObjectURL(await handle.getFile());
-        v.play(); v.focus();
+        
+        const file = await fileHandle.getFile();
+        const url = URL.createObjectURL(file);
+        
+        v.src = url;
+        v.play(); 
+        v.focus();
+
     } catch (e) { 
         txt.textContent = "Err: " + e.message; 
-        if(e.name === 'QuotaExceededError') { if(confirm("Vider Cache?")) clearCache(); }
+        console.error(e);
+        if(e.name === 'QuotaExceededError') { 
+            if(confirm("Disque plein. Vider le cache ?")) clearCache(); 
+        }
     }
 };
 
-const clearCache = async () => { try { const r = await navigator.storage.getDirectory(); await r.removeEntry('temp_video.mp4'); alert("Vidé."); } catch(e){alert("Déjà vide");} };
+const clearCache = async () => { 
+    try { 
+        const r = await navigator.storage.getDirectory(); 
+        await r.removeEntry('temp_video.mp4'); 
+        localStorage.removeItem('cached_video_id'); // On oublie l'ID aussi
+        alert("Cache vidé."); 
+    } catch(e){
+        alert("Déjà vide ou erreur: " + e.message);
+    } 
+};
+
 
 // Events
 document.getElementById('save-config-btn').onclick = () => { localStorage.setItem('teletv_id', document.getElementById('api-id').value); localStorage.setItem('teletv_hash', document.getElementById('api-hash').value); location.reload(); };
@@ -303,4 +367,5 @@ document.getElementById('search-input').onkeydown = (e) => {
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
+
 
