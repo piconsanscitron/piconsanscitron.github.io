@@ -87,44 +87,45 @@ const startQRLogin = async () => {
     showScreen('auth-screen');
     const qrStatus = document.getElementById('qr-status');
     const qrDiv = document.getElementById('qrcode');
-    
-    // Nettoyage précédent
     qrDiv.innerHTML = "";
 
     try {
         log("Génération QR Code...");
         
-        await client.signInUserWithQrCode({ 
-            apiId: API_ID, 
-            apiHash: API_HASH, 
-            onError: (e) => {
-                log("Erreur QR: " + e.message);
-                qrStatus.textContent = "Erreur: " + e.message;
-            },
+        // Correction ici : on passe bien l'objet avec qrCode et onError
+        await client.signInUserWithQrCode({
+            apiId: API_ID,
+            apiHash: API_HASH,
             qrCode: async (code) => {
                 log("Nouveau QR Code reçu");
                 qrStatus.textContent = "Scannez ce code avec Telegram (Réglages > Appareils)";
                 qrDiv.innerHTML = "";
-                // Utilisation de la librairie globale QRCode
+                // Génération du QR Code avec la librairie qrcode.js
                 new QRCode(qrDiv, {
                     text: `tg://login?token=${code.token.toString('base64url')}`,
                     width: 256,
                     height: 256
                 });
+            },
+            onError: (err) => {
+                log("Erreur QR: " + err.message);
+                qrStatus.textContent = "Erreur: " + err.message;
+                // On relance la génération après 2 secondes
+                setTimeout(startQRLogin, 2000);
             }
         });
 
-        // Une fois scanné et validé, cette ligne est atteinte
+        // Si on arrive ici, c'est que l'authentification est terminée
         log("Login succès !");
         localStorage.setItem('teletv_session', client.session.save());
         loadChannels();
 
     } catch (e) {
-        // Souvent une erreur de timeout si l'user met trop de temps
         log("Session expirée ou erreur: " + e.message);
-        setTimeout(startQRLogin, 2000); // On relance
+        setTimeout(startQRLogin, 2000); // Relance en cas d'erreur
     }
 };
+
 
 const loadChannels = async () => {
     log("Chargement canaux...");
@@ -224,3 +225,4 @@ document.onkeydown = (e) => {
 
 // START
 startApp();
+
