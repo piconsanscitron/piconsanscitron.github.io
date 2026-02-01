@@ -68,13 +68,11 @@ const startApp = async () => {
 
         await client.connect();
         
-        // Vérification de l'authentification
         const isAuth = await client.checkAuthorization();
         if (isAuth) {
             log("Session valide !");
             loadChannels();
         } else {
-            // Pas connecté ? On lance le login QR Code manuel
             startQRLogin();
         }
     } catch (e) {
@@ -89,7 +87,6 @@ const startApp = async () => {
     }
 };
 
-// Fonction de login QR Code MANUELLE (Plus robuste)
 const startQRLogin = async () => {
     showScreen('auth-screen');
     const qrStatus = document.getElementById('qr-status');
@@ -98,8 +95,7 @@ const startQRLogin = async () => {
     qrStatus.textContent = "Génération du token...";
 
     try {
-        // ÉTAPE 1: Demander un token d'exportation
-        // Le paramètre exceptIds: [] est OBLIGATOIRE pour éviter le CastError
+        // 1. Demande du token (avec exceptIds vide obligatoire)
         const result = await client.invoke(
             new Api.auth.ExportLoginToken({
                 apiId: API_ID,
@@ -109,8 +105,7 @@ const startQRLogin = async () => {
         );
 
         if (!(result instanceof Api.auth.LoginToken)) {
-            // Cas rare: LoginTokenMigrateTo (mauvais DC) ou LoginTokenSuccess (déjà loggé)
-            if (result instanceof Api.auth.LoginTokenSuccess) {
+             if (result instanceof Api.auth.LoginTokenSuccess) {
                 log("Déjà connecté !");
                 loadChannels();
                 return;
@@ -118,19 +113,22 @@ const startQRLogin = async () => {
             throw new Error("Type de token inattendu: " + result.className);
         }
 
-        // ÉTAPE 2: Afficher le QR Code
+        // 2. Conversion manuelle Base64 -> Base64URL
+        // Le polyfill ne supporte pas 'base64url', on le fait à la main
+        const base64 = result.token.toString('base64');
+        const tokenString = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+        
         log("Token généré, affichage QR...");
         qrStatus.textContent = "Scannez ce code avec Telegram (Réglages > Appareils)";
         
-        // Nettoyage et création QR
         qrDiv.innerHTML = "";
         new QRCode(qrDiv, {
-            text: `tg://login?token=${result.token.toString('base64url')}`,
+            text: `tg://login?token=${tokenString}`,
             width: 256,
             height: 256
         });
 
-        // ÉTAPE 3: Boucle de vérification (Polling)
+        // 3. Boucle de vérification
         let isDone = false;
         
         const checkToken = async () => {
@@ -150,8 +148,7 @@ const startQRLogin = async () => {
                     localStorage.setItem('teletv_session', client.session.save());
                     loadChannels();
                 } else if (authResult instanceof Api.auth.LoginToken) {
-                    // Toujours en attente, on continue de boucler
-                    setTimeout(checkToken, 2000); // Check toutes les 2s
+                    setTimeout(checkToken, 2000); 
                 }
             } catch (err) {
                 if (err.errorMessage === 'SESSION_PASSWORD_NEEDED') {
@@ -163,20 +160,17 @@ const startQRLogin = async () => {
                         loadChannels();
                     }
                 } else {
-                    console.error("Erreur polling:", err);
-                    // On continue quand même sauf erreur fatale
-                    setTimeout(checkToken, 3000);
+                    console.error("Polling:", err);
+                    setTimeout(checkToken, 3000); // Retry lent
                 }
             }
         };
 
-        // Lancer la boucle
         setTimeout(checkToken, 2000);
 
     } catch (e) {
         console.error("Erreur Flux QR:", e);
         qrStatus.textContent = "Erreur: " + e.message;
-        // Retry auto après 5s
         setTimeout(startQRLogin, 5000);
     }
 };
@@ -261,7 +255,6 @@ const loadVideos = async (entity) => {
 const playVideo = async (msg) => {
     log("Téléchargement (Buffering)...");
     try {
-        // Attention: gros fichiers = crash possible sur TV (RAM limitée)
         const buffer = await client.downloadMedia(msg.media, { workers: 1 });
         if(!buffer) throw new Error("Téléchargement vide");
 
