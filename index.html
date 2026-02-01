@@ -36,16 +36,18 @@
                 <button id="btn-reload" tabindex="0">Actualiser</button>
                 <button id="btn-clear-cache" tabindex="0">Vider Cache</button>
                 <button id="btn-logout" tabindex="0">Déconnexion</button>
+                <div id="disk-usage" style="margin-left:auto; font-size:0.8rem; color:#888; align-self:center;"></div>
             </div>
             <h2 style="margin-bottom: 1rem;">Vos Canaux</h2>
             <div id="channels-grid" class="grid"></div>
         </section>
 
-        <!-- RECHERCHE -->
+        <!-- RECHERCHE AMÉLIORÉE -->
         <section id="search-screen" class="screen hidden">
-            <div class="toolbar">
-                <input type="text" id="search-input" placeholder="Chercher un canal..." tabindex="0" style="flex:1;">
-                <button id="btn-do-search" tabindex="0">OK</button>
+            <h2 style="margin-bottom:1.5rem; text-align:center;">Recherche Globale</h2>
+            <div class="search-toolbar">
+                <input type="text" id="search-input" placeholder="Titre, chaîne ou mot-clé..." tabindex="0">
+                <button id="btn-do-search" tabindex="0">GO</button>
             </div>
             <div id="search-results" class="grid"></div>
         </section>
