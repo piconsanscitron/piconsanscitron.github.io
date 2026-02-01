@@ -13,74 +13,93 @@ const log = (msg) => {
 };
 
 // --- NAVIGATION ---
-
-// Focus simple : le navigateur TV gère le scroll nativement si le body est scrollable
 const focusElement = (el) => {
     if(el) {
-        el.focus({ preventScroll: false }); // On laisse le navigateur scroller
-        el.scrollIntoView({ behavior: 'smooth', block: 'center' }); // Aide au centrage
+        el.focus({ preventScroll: false });
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
 };
 
 const showScreen = (id) => {
-    // Masque tout
     document.querySelectorAll('.screen').forEach(s => {
         s.classList.remove('active');
         s.classList.add('hidden');
     });
     
-    // Affiche le bon
     const t = document.getElementById(id);
     if(t) {
         t.classList.remove('hidden');
         t.classList.add('active');
-        
-        // Reset scroll page
         window.scrollTo(0, 0);
         
-        // Focus logique
+        // PUSH STATE POUR LE BOUTON RETOUR PHYSIQUE
+        history.pushState({ screen: id }, null, "");
+
         setTimeout(() => {
             let f;
             if (id === 'channels-screen') f = document.getElementById('btn-search-nav');
             else if (id === 'player-screen') f = document.getElementById('main-player');
             else f = t.querySelector('[tabindex="0"]');
-            
             focusElement(f);
-        }, 150);
+        }, 200);
     }
 };
 
 const goBack = () => {
+    // Si on est à la racine, on ne fait rien
     if(document.getElementById('channels-screen').classList.contains('active')) return;
+
     if(historyStack.length > 0) {
         const prev = historyStack.pop();
+        
+        // Arrêt propre Vidéo
         const v = document.getElementById('main-player');
         if(v) { v.pause(); v.removeAttribute('src'); v.load(); }
+        
+        // Arrêt Loader
         document.getElementById('video-loader').classList.add('hidden');
         if(wakeLock) wakeLock.release();
+        
         showScreen(prev);
-    } else showScreen('channels-screen');
+    } else {
+        showScreen('channels-screen');
+    }
 };
 
 const navigateTo = (id) => {
     const curr = document.querySelector('.screen.active');
-    if(curr) historyStack.push(curr.id);
+    if(curr && curr.id !== id) historyStack.push(curr.id);
     showScreen(id);
 };
 
-// Anti-Veille
-const requestWakeLock = async () => {
-    if ('wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
+// --- ECOUTEUR BOUTON RETOUR PHYSIQUE ---
+window.onpopstate = (event) => {
+    // Empêche le navigateur de revenir en arrière dans l'historique URL réel
+    // Et lance notre fonction interne
+    history.pushState(null, null, window.location.href);
+    goBack();
 };
 
-// --- TELEGRAM LOGIC ---
 
+// --- TELEGRAM ---
 const startApp = async () => {
     const sId = localStorage.getItem('teletv_id');
     const sHash = localStorage.getItem('teletv_hash');
     const session = localStorage.getItem('teletv_session') || "";
 
-    if(!sId || !sHash) { showScreen('config-screen'); return; }
+    // Hack historique initial
+    history.replaceState({ screen: 'init' }, null, "");
+    history.pushState({ screen: 'init' }, null, "");
+
+    if(!sId || !sHash) { 
+        document.getElementById('config-screen').classList.add('active'); // Force display sans anim
+        return; 
+    }
+    
+    // Si config ok, on cache config
+    document.getElementById('config-screen').classList.remove('active');
+    document.getElementById('config-screen').classList.add('hidden');
+    
     API_ID = parseInt(sId); API_HASH = sHash;
     log("Connexion...");
 
@@ -122,7 +141,7 @@ const loadChannels = async () => {
         filtered.forEach(d => {
             const el = document.createElement('div');
             el.className = 'card';
-            el.innerHTML = `<div>${d.pinned ? '📌 ' : ''}${d.title}</div>`;
+            el.innerHTML = `<div style="text-align:center; font-weight:bold;">${d.pinned ? '📌 ' : ''}${d.title}</div>`;
             el.tabIndex = 0;
             el.onfocus = () => focusElement(el);
             el.onclick = () => loadVideos(d.entity);
@@ -140,7 +159,7 @@ const loadVideos = async (entity) => {
     document.getElementById('channel-title').textContent = entity.title;
 
     try {
-        const msgs = await client.getMessages(entity, { limit: 30, filter: new Api.InputMessagesFilterVideo() });
+        const msgs = await client.getMessages(entity, { limit: 40, filter: new Api.InputMessagesFilterVideo() });
         grid.innerHTML = "";
         if(!msgs || msgs.length === 0) { grid.innerHTML = "Vide"; return; }
 
@@ -152,13 +171,13 @@ const loadVideos = async (entity) => {
             if(attr) dur = `${Math.floor(attr.duration/60)}:${(attr.duration%60).toString().padStart(2,'0')}`;
             
             el.innerHTML = `
-                <div class="thumb-placeholder" style="height:120px; background:#222; display:flex; align-items:center; justify-content:center;">...</div>
-                <div class="meta" style="padding:10px;">
+                <div class="thumb-placeholder">...</div>
+                <div class="meta">
                     <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.message || "Vidéo"}</div>
-                    <div style="font-size:0.8rem; color:#aaa;">⏱ ${dur} | ${(m.media.document.size/1024/1024).toFixed(0)} MB</div>
+                    <div style="font-size:0.75rem; color:#aaa; margin-top:5px;">⏱ ${dur} | ${(m.media.document.size/1024/1024).toFixed(0)} MB</div>
                 </div>`;
             el.tabIndex = 0;
-            el.onfocus = () => focusElement(el); // IMPORTANT
+            el.onfocus = () => focusElement(el);
             
             const play = () => playStream(m);
             el.onclick = play;
@@ -184,11 +203,8 @@ const playStream = async (msg) => {
     const txt = document.getElementById('loader-text');
     const btnCancel = document.getElementById('btn-cancel-load');
     
-    v.src = "";
-    loader.classList.remove('hidden');
-    bar.style.width = "0%";
-    txt.textContent = "Init...";
-    requestWakeLock();
+    v.src = ""; loader.classList.remove('hidden'); bar.style.width = "0%"; txt.textContent = "Init...";
+    if('wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
     
     let cancelled = false;
     btnCancel.onclick = () => { cancelled = true; goBack(); };
@@ -216,26 +232,19 @@ const playStream = async (msg) => {
         
         loader.classList.add('hidden');
         v.src = URL.createObjectURL(await handle.getFile());
-        v.play();
-        v.focus();
+        v.play(); v.focus();
     } catch (e) { 
         txt.textContent = "Err: " + e.message; 
-        if(e.name === 'QuotaExceededError') { if(confirm("Disque plein. Vider?")) clearCache(); }
+        if(e.name === 'QuotaExceededError') { if(confirm("Vider Cache?")) clearCache(); }
     }
 };
 
-const clearCache = async () => {
-    try { const r = await navigator.storage.getDirectory(); await r.removeEntry('temp_video.mp4'); alert("Vidé."); } catch(e){alert("Déjà vide");}
-};
+const clearCache = async () => { try { const r = await navigator.storage.getDirectory(); await r.removeEntry('temp_video.mp4'); alert("Vidé."); } catch(e){alert("Déjà vide");} };
 
-// Events
-document.getElementById('save-config-btn').onclick = () => {
-    localStorage.setItem('teletv_id', document.getElementById('api-id').value);
-    localStorage.setItem('teletv_hash', document.getElementById('api-hash').value);
-    location.reload();
-};
+document.getElementById('save-config-btn').onclick = () => { localStorage.setItem('teletv_id', document.getElementById('api-id').value); localStorage.setItem('teletv_hash', document.getElementById('api-hash').value); location.reload(); };
 document.getElementById('btn-search-nav').onclick = () => navigateTo('search-screen');
 document.getElementById('btn-clear-cache').onclick = clearCache;
+document.getElementById('btn-reload').onclick = () => location.reload();
 document.getElementById('btn-logout').onclick = () => { if(confirm("Déco?")) { localStorage.clear(); clearCache(); location.reload(); }};
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
