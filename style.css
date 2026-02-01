@@ -143,3 +143,28 @@ a { color: var(--focus-color); }
     font-weight: bold;
 }
 
+html {
+    scroll-behavior: smooth;
+    /* Force le scroll vertical sur Silk */
+    overflow-y: scroll; 
+    height: 100%;
+}
+
+body {
+    /* Marge en bas pour éviter que le dernier élément soit coupé */
+    padding-bottom: 50px; 
+}
+
+.card, input, button {
+    /* Marge de sécurité pour le scroll automatique */
+    scroll-margin-top: 150px; 
+    scroll-margin-bottom: 150px;
+}
+
+/* Force l'affichage du focus même si Silk essaie de le cacher */
+:focus {
+    outline: 4px solid var(--focus-color) !important;
+    z-index: 10;
+    position: relative;
+}
+
