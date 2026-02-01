@@ -5,58 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TeleTV Player</title>
     <link rel="stylesheet" href="style.css">
+    <!-- Librairie pour générer le dessin du QR Code -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
     <div id="app">
-        <!-- 1. Écran de Configuration API -->
+        <!-- 1. Config -->
         <section id="config-screen" class="screen active">
-            <h1>Configuration Initiale</h1>
-            <p class="info-text">Vos identifiants seront stockés localement.</p>
+            <h1>Configuration</h1>
+            <p class="info-text">Entrez vos clés API (stockées localement).</p>
             <div class="input-group">
-                <input type="text" id="api-id" placeholder="API ID (ex: 123456)" tabindex="0">
+                <input type="text" id="api-id" placeholder="API ID" tabindex="0">
                 <input type="text" id="api-hash" placeholder="API Hash" tabindex="0">
-                <button id="save-config-btn" tabindex="0">Sauvegarder & Continuer</button>
+                <button id="save-config-btn" tabindex="0">Continuer</button>
             </div>
-            <p class="small-text">Obtenez ces clés sur <a href="https://my.telegram.org" target="_blank">my.telegram.org</a></p>
+            <p class="small-text">Clés disponibles sur <a href="https://my.telegram.org">my.telegram.org</a></p>
         </section>
 
-        <!-- 2. Écran de Connexion -->
-        <section id="auth-screen" class="screen hidden">
-            <h1>Connexion Telegram</h1>
-            <div class="input-group">
-                <input type="text" id="phone" placeholder="+33612345678" tabindex="0">
-                <button id="send-code-btn" tabindex="0">Recevoir le code</button>
+        <!-- 2. Connexion par QR Code (NOUVEAU) -->
+        <section id="auth-screen" class="screen hidden" style="text-align: center;">
+            <h1>Scannez pour connecter</h1>
+            <p class="info-text">Ouvrez Telegram sur votre téléphone > Réglages > Appareils > Lier un appareil</p>
+            
+            <div id="qr-container" style="background: white; padding: 20px; display: inline-block; border-radius: 10px; margin: 20px;">
+                <!-- Le QR code sera dessiné ici -->
+                <div id="qrcode"></div>
             </div>
             
-            <div class="input-group hidden" id="code-group">
-                <input type="text" id="code" placeholder="Code SMS (12345)" tabindex="0">
-                <input type="password" id="password" placeholder="Mot de passe 2FA (si actif)" tabindex="0">
-                <button id="login-btn" tabindex="0">Se connecter</button>
-            </div>
-            
-            <button id="reset-config-btn" class="secondary-btn" tabindex="0">Réinitialiser Config</button>
-            <div id="status">En attente...</div>
+            <div id="qr-status" style="margin-top: 10px; color: #aaa;">Génération du QR Code...</div>
+            <button id="reset-config-btn" class="secondary-btn" tabindex="0">Changer configuration</button>
         </section>
 
-        <!-- 3. Liste des Canaux -->
+        <!-- 3. Canaux -->
         <section id="channels-screen" class="screen hidden">
             <h2>Vos Canaux</h2>
             <div id="channels-grid" class="grid"></div>
         </section>
 
-        <!-- 4. Liste des Vidéos -->
+        <!-- 4. Vidéos -->
         <section id="videos-screen" class="screen hidden">
             <h2 id="channel-title">Vidéos</h2>
             <div id="videos-grid" class="grid"></div>
         </section>
 
-        <!-- 5. Lecteur Vidéo -->
+        <!-- 5. Lecteur -->
         <section id="player-screen" class="screen hidden">
             <video id="main-player" controls></video>
         </section>
+        
+        <!-- Debug status global -->
+        <div id="status" style="position:fixed; bottom:10px; left:10px; font-size:0.8rem; color:#666;"></div>
     </div>
 
-    <!-- IMPORTANT : type="module" est obligatoire ici -->
     <script type="module" src="app.js"></script>
 </body>
 </html>
