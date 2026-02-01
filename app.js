@@ -180,7 +180,7 @@ const loadVideos = async (entity) => {
             const attr = m.media?.document?.attributes?.find(a => a.duration);
             if(attr) dur = `${Math.floor(attr.duration/60)}:${(attr.duration%60).toString().padStart(2,'0')}`;
             
-            // TITRE SIMPLE ET DIRECT (Comme v3)
+            // UI TEXTE SIMPLIFIÉE
             const title = m.message && m.message.length > 0 ? m.message : "Vidéo sans titre";
             const size = (m.media.document.size/1024/1024).toFixed(0);
 
@@ -192,7 +192,7 @@ const loadVideos = async (entity) => {
                     <div style="font-weight:bold; font-size:1rem; min-height:1.2em; overflow:hidden;">${title}</div>
                     <div style="font-size:0.8rem; color:#aaa;">⏱ ${dur} | ${size} MB</div>
                 </div>`;
-                
+            
             el.tabIndex = 0;
             el.onfocus = () => focusElement(el);
             
@@ -242,7 +242,7 @@ const performSearch = async () => {
     } catch(e) { log("Err: " + e.message); }
 };
 
-// --- STREAMING INTELLIGENT AVEC CACHE ---
+// --- STREAMING OPTIMISÉ CACHE ---
 const playStream = async (msg) => {
     navigateTo('player-screen');
     const v = document.getElementById('main-player');
@@ -251,13 +251,7 @@ const playStream = async (msg) => {
     const txt = document.getElementById('loader-text');
     const btnCancel = document.getElementById('btn-cancel-load');
     
-    // Reset UI
-    v.src = ""; 
-    loader.classList.remove('hidden'); 
-    bar.style.width = "0%"; 
-    txt.textContent = "Vérification du cache...";
-    
-    // Anti-veille
+    v.src = ""; loader.classList.remove('hidden'); bar.style.width = "0%"; txt.textContent = "Init...";
     if('wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
     
     let cancelled = false;
@@ -268,37 +262,29 @@ const playStream = async (msg) => {
 
     try {
         const root = await navigator.storage.getDirectory();
-        const currentMsgId = msg.id.toString();
-        const cachedMsgId = localStorage.getItem('cached_video_id');
-        
-        // 1. VÉRIFICATION DU CACHE
+        const currentId = msg.id.toString();
+        const cachedId = localStorage.getItem('cached_video_id');
         let fileHandle;
-        let fileExists = false;
+        let needsDownload = true;
 
+        // VERIFICATION CACHE
         try {
-            // On essaie d'ouvrir le fichier existant sans le créer
-            fileHandle = await root.getFileHandle('temp_video.mp4'); 
-            // On vérifie si c'est la bonne vidéo
-            if (cachedMsgId === currentMsgId) {
-                const fileCheck = await fileHandle.getFile();
-                if (fileCheck.size > 0) {
-                    fileExists = true;
-                    txt.textContent = "Fichier trouvé en cache !";
+            fileHandle = await root.getFileHandle('temp_video.mp4');
+            if (currentId === cachedId) {
+                const f = await fileHandle.getFile();
+                if(f.size > 1000) { // On vérifie que le fichier n'est pas vide (min 1KB)
+                    needsDownload = false;
+                    txt.textContent = "Fichier en cache !";
                     bar.style.width = "100%";
                 }
             }
-        } catch(e) {
-            // Fichier inexistant, on continue vers le téléchargement
-            fileExists = false;
-        }
+        } catch(e) { needsDownload = true; }
 
-        // 2. TÉLÉCHARGEMENT (Si pas en cache)
-        if (!fileExists) {
-            txt.textContent = "Démarrage téléchargement...";
-            // create: true va écraser l'ancien fichier
+        // TELECHARGEMENT
+        if (needsDownload) {
+            txt.textContent = "Téléchargement...";
             fileHandle = await root.getFileHandle('temp_video.mp4', { create: true });
             const writable = await fileHandle.createWritable();
-            
             const size = msg.media.document.size;
             let dl = 0;
 
@@ -306,67 +292,34 @@ const playStream = async (msg) => {
                 if(cancelled) { await writable.close(); return; }
                 await writable.write(chunk);
                 dl += chunk.length;
-                
-                const pct = Math.round((dl/size)*100);
-                bar.style.width = `${pct}%`;
-                txt.textContent = `Téléchargement: ${pct}%`;
+                bar.style.width = `${Math.round((dl/size)*100)}%`;
+                txt.textContent = `DL: ${Math.round((dl/size)*100)}%`;
             }
             await writable.close();
-            
-            // Sauvegarde de l'ID pour la prochaine fois
-            localStorage.setItem('cached_video_id', currentMsgId);
+            localStorage.setItem('cached_video_id', currentId);
         }
 
         if(cancelled) return;
 
-        // 3. LECTURE
-        // ... (Code précédent identique) ...
-
-        if(cancelled) return;
-
-        // 3. LECTURE OPTIMISÉE POUR TV
-        txt.textContent = "Prêt !";
-        bar.style.width = "100%";
-
-        // On cache le loader immédiatement
-        loader.classList.add('hidden');
+        // LECTURE AVEC FIX TV
+        txt.textContent = "Lecture...";
+        loader.classList.add('hidden'); // Cache immédiat
         
-        // ASTUCE TV: On attend 100ms pour laisser le temps au navigateur d'effacer le loader VISUELLEMENT
-        // avant de bloquer le processeur avec le chargement du fichier de 1Go+.
         setTimeout(async () => {
             try {
                 const file = await fileHandle.getFile();
-                const url = URL.createObjectURL(file);
-                
-                v.src = url;
-                v.load(); // Force le chargement
-                
-                // Promesse de lecture pour gérer les erreurs d'autoplay
-                const playPromise = v.play();
-                if (playPromise !== undefined) {
-                    playPromise.then(_ => {
-                        v.focus();
-                    })
-                    .catch(error => {
-                        console.log("Auto-play bloqué, attente interaction utilisateur");
-                        v.focus(); // Si bloqué, le focus permet de lancer avec OK
-                    });
-                }
-            } catch (err) {
-                console.error("Erreur lecture différée:", err);
-                alert("Erreur lecture: " + err.message);
-                loader.classList.remove('hidden'); // On réaffiche si ça plante
+                v.src = URL.createObjectURL(file);
+                v.load();
+                const p = v.play();
+                if(p) p.then(()=>v.focus()).catch(()=>{ console.log("Autoplay bloqué"); v.focus(); });
+            } catch(e) {
+                alert("Erreur lecture: "+e.message); loader.classList.remove('hidden');
             }
-        }, 150); // Délai augmenté pour Fire Stick
-
-
+        }, 150); // Délai rendu
 
     } catch (e) { 
         txt.textContent = "Err: " + e.message; 
-        console.error(e);
-        if(e.name === 'QuotaExceededError') { 
-            if(confirm("Disque plein. Vider le cache ?")) clearCache(); 
-        }
+        if(e.name === 'QuotaExceededError') { if(confirm("Vider Cache?")) clearCache(); }
     }
 };
 
@@ -374,13 +327,10 @@ const clearCache = async () => {
     try { 
         const r = await navigator.storage.getDirectory(); 
         await r.removeEntry('temp_video.mp4'); 
-        localStorage.removeItem('cached_video_id'); // On oublie l'ID aussi
-        alert("Cache vidé."); 
-    } catch(e){
-        alert("Déjà vide ou erreur: " + e.message);
-    } 
+        localStorage.removeItem('cached_video_id');
+        alert("Vidé."); 
+    } catch(e){ alert("Déjà vide"); } 
 };
-
 
 // Events
 document.getElementById('save-config-btn').onclick = () => { localStorage.setItem('teletv_id', document.getElementById('api-id').value); localStorage.setItem('teletv_hash', document.getElementById('api-hash').value); location.reload(); };
@@ -396,6 +346,3 @@ document.getElementById('search-input').onkeydown = (e) => {
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
-
-
-
