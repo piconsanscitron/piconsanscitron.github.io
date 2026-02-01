@@ -5,6 +5,7 @@ const { StringSession } = sessions;
 let client;
 let API_ID, API_HASH;
 let historyStack = [];
+let wakeLock = null; // Pour empêcher la veille
 
 // --- UI HELPERS ---
 const log = (msg) => {
@@ -13,19 +14,47 @@ const log = (msg) => {
     if(el) {
         el.textContent = msg;
         el.style.display = 'block';
-        setTimeout(() => { el.style.display = 'none'; }, 5000);
+        setTimeout(() => { el.style.display = 'none'; }, 4000);
     }
 };
 
-// FIX NAVIGATION TV : Scroll automatique
+// --- FIX NAVIGATION TV (SCROLL AGRESSIF) ---
 const focusElement = (el) => {
     if(el) {
         el.focus();
-        // Centre l'élément sélectionné dans l'écran
+        // Méthode 1: Standard
         el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        
+        // Méthode 2: Fallback manuel pour vieilles TV
+        const rect = el.getBoundingClientRect();
+        const isInView = (rect.top >= 0) && (rect.bottom <= window.innerHeight);
+        if (!isInView) {
+            window.scrollTo({
+                top: window.scrollY + rect.top - (window.innerHeight / 2),
+                behavior: 'smooth'
+            });
+        }
     }
 };
 
+// --- ANTI-VEILLE ---
+const requestWakeLock = async () => {
+    if ('wakeLock' in navigator) {
+        try {
+            wakeLock = await navigator.wakeLock.request('screen');
+            console.log('Wake Lock actif');
+        } catch (err) {
+            console.error(`Wake Lock erreur: ${err.name}, ${err.message}`);
+        }
+    }
+};
+const releaseWakeLock = () => {
+    if (wakeLock !== null) {
+        wakeLock.release().then(() => { wakeLock = null; });
+    }
+};
+
+// --- NAVIGATION ---
 const showScreen = (id) => {
     document.querySelectorAll('.screen').forEach(s => s.classList.remove('active', 'hidden'));
     document.querySelectorAll('.screen').forEach(s => s.classList.add('hidden'));
@@ -33,9 +62,15 @@ const showScreen = (id) => {
     if(t) {
         t.classList.remove('hidden');
         t.classList.add('active');
+        
+        // Hack pour mapper le bouton Back du navigateur
+        history.pushState({ screen: id }, null, "");
+        
         setTimeout(() => {
             if(id === 'channels-screen') {
                 focusElement(document.getElementById('btn-search-nav'));
+            } else if (id === 'player-screen') {
+                focusElement(document.getElementById('main-player'));
             } else {
                 const f = t.querySelector('[tabindex="0"]');
                 focusElement(f);
@@ -45,14 +80,26 @@ const showScreen = (id) => {
 };
 
 const goBack = () => {
-    if(historyStack.length === 0) return;
-    const v = document.getElementById('main-player');
-    if(v) { 
-        v.pause(); 
-        v.removeAttribute('src'); // Stop download
-        v.load();
+    // Si on est déjà à la racine, on ne fait rien (ou on laisse le navigateur quitter)
+    if(document.getElementById('channels-screen').classList.contains('active')) return;
+
+    if(historyStack.length > 0) {
+        const prev = historyStack.pop();
+        
+        // Nettoyage Player
+        const v = document.getElementById('main-player');
+        if(v) { 
+            v.pause(); 
+            v.removeAttribute('src'); 
+            v.load();
+        }
+        document.getElementById('video-loader').classList.add('hidden');
+        releaseWakeLock(); // On relâche la veille
+        
+        showScreen(prev);
+    } else {
+        showScreen('channels-screen');
     }
-    showScreen(historyStack.pop());
 };
 
 const navigateTo = (id) => {
@@ -61,7 +108,15 @@ const navigateTo = (id) => {
     showScreen(id);
 };
 
-// --- CACHE & OUTILS ---
+// Gestionnaire bouton Back navigateur (et télécommande)
+window.onpopstate = (event) => {
+    // Si l'utilisateur appuie sur Back, on intercepte
+    // On empêche le retour arrière réel du navigateur et on utilise notre logique
+    history.pushState(null, null, window.location.href);
+    goBack();
+};
+
+// --- CACHE ---
 const clearVideoCache = async () => {
     if (!navigator.storage || !navigator.storage.getDirectory) {
         alert("Non supporté."); return;
@@ -69,9 +124,8 @@ const clearVideoCache = async () => {
     try {
         const root = await navigator.storage.getDirectory();
         await root.removeEntry('temp_video.mp4');
-        log("Cache vidé.");
         alert("Cache vidé.");
-    } catch (e) { log("Erreur Cache: " + e.message); }
+    } catch (e) { alert("Déjà vide."); }
 };
 
 const checkDiskUsage = async () => {
@@ -82,16 +136,16 @@ const checkDiskUsage = async () => {
     }
 };
 
-// --- LOGIQUE TELEGRAM ---
+// --- TELEGRAM ---
 const startApp = async () => {
     const sId = localStorage.getItem('teletv_id');
     const sHash = localStorage.getItem('teletv_hash');
     const session = localStorage.getItem('teletv_session') || "";
 
-    if(!sId || !sHash) {
-        showScreen('config-screen');
-        return;
-    }
+    // Hack initial pour l'historique
+    history.replaceState({ screen: 'init' }, null, "");
+
+    if(!sId || !sHash) { showScreen('config-screen'); return; }
 
     API_ID = parseInt(sId, 10);
     API_HASH = sHash;
@@ -99,22 +153,16 @@ const startApp = async () => {
 
     try {
         client = new TelegramClient(new StringSession(session), API_ID, API_HASH, {
-            connectionRetries: 5,
-            useWSS: true,
+            connectionRetries: 5, useWSS: true,
         });
         await client.connect();
         
-        if (await client.checkAuthorization()) {
-            loadChannels();
-        } else {
-            startQRLogin();
-        }
+        if (await client.checkAuthorization()) loadChannels();
+        else startQRLogin();
     } catch (e) {
-        log("Erreur Init: " + e.message);
+        log("Erreur: " + e.message);
         if(e.message.includes("API_ID")) {
-            if(confirm("Reset Config?")) {
-                localStorage.clear(); location.reload();
-            }
+            if(confirm("Reset Config?")) { localStorage.clear(); location.reload(); }
         }
     }
 };
@@ -128,10 +176,7 @@ const startQRLogin = async () => {
         const result = await client.invoke(
             new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] })
         );
-
-        if (result instanceof Api.auth.LoginTokenSuccess) {
-            loadChannels(); return;
-        }
+        if (result instanceof Api.auth.LoginTokenSuccess) { loadChannels(); return; }
 
         const base64 = result.token.toString('base64');
         const tokenString = base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
@@ -139,10 +184,8 @@ const startQRLogin = async () => {
 
         const checkToken = async () => {
             try {
-                const authResult = await client.invoke(
-                    new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] })
-                );
-                if (authResult instanceof Api.auth.LoginTokenSuccess) {
+                const r = await client.invoke(new Api.auth.ExportLoginToken({ apiId: API_ID, apiHash: API_HASH, exceptIds: [] }));
+                if (r instanceof Api.auth.LoginTokenSuccess) {
                     localStorage.setItem('teletv_session', client.session.save());
                     loadChannels();
                 } else setTimeout(checkToken, 2000); 
@@ -159,7 +202,7 @@ const loadChannels = async () => {
     grid.innerHTML = "Chargement...";
 
     try {
-        const dialogs = await client.getDialogs({ limit: 100 });
+        const dialogs = await client.getDialogs({ limit: 80 });
         grid.innerHTML = "";
         
         const filtered = dialogs.filter(d => (d.isChannel || d.isGroup) && !d.archived);
@@ -172,20 +215,17 @@ const loadChannels = async () => {
             el.className = 'card';
             el.innerHTML = `<div>${d.pinned ? '📌 ' : ''}${d.title}</div>`;
             el.tabIndex = 0;
-            
-            // FIX SCROLL: Ajout de l'event listener focus
-            el.addEventListener('focus', () => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+            // FIX SCROLL
+            el.onfocus = () => focusElement(el);
             
             const open = () => loadVideos(d.entity);
             el.onclick = open;
             el.onkeydown = (e) => e.key === 'Enter' && open();
             grid.appendChild(el);
         });
-        
-        // Focus premier element
-        setTimeout(() => focusElement(grid.firstChild || document.getElementById('btn-search-nav')), 100);
+        setTimeout(() => focusElement(grid.firstChild || document.getElementById('btn-search-nav')), 200);
 
-    } catch (e) { log("Erreur Canaux: " + e.message); }
+    } catch (e) { log("Erreur: " + e.message); }
 };
 
 const loadVideos = async (entity) => {
@@ -196,8 +236,7 @@ const loadVideos = async (entity) => {
 
     try {
         const msgs = await client.getMessages(entity, {
-            limit: 20,
-            filter: new Api.InputMessagesFilterVideo()
+            limit: 20, filter: new Api.InputMessagesFilterVideo()
         });
 
         grid.innerHTML = "";
@@ -212,9 +251,7 @@ const loadVideos = async (entity) => {
             if(attr) dur = `${Math.floor(attr.duration/60)}:${(attr.duration%60).toString().padStart(2,'0')}`;
 
             el.innerHTML = `
-                <div class="thumb-placeholder" style="height:120px; background:#222; display:flex; align-items:center; justify-content:center;">
-                    <span style="font-size:0.8rem; color:#555;">...</span>
-                </div>
+                <div class="thumb-placeholder" style="height:120px; background:#222; display:flex; align-items:center; justify-content:center;">...</div>
                 <div class="meta" style="padding:10px;">
                     <div style="font-weight:bold; font-size:0.9rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">
                         ${m.message || "Vidéo"}
@@ -223,9 +260,7 @@ const loadVideos = async (entity) => {
                 </div>
             `;
             el.tabIndex = 0;
-            
-            // FIX SCROLL
-            el.addEventListener('focus', () => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+            el.onfocus = () => focusElement(el);
 
             const play = () => playVideoStreaming(m);
             el.onclick = play;
@@ -233,7 +268,6 @@ const loadVideos = async (entity) => {
             
             grid.appendChild(el);
 
-            // Thumbnail
             if(m.media.document.thumbs) {
                 const thumb = m.media.document.thumbs.find(t => t.className === 'PhotoSize');
                 if(thumb) {
@@ -244,29 +278,38 @@ const loadVideos = async (entity) => {
                 }
             }
         }
-        setTimeout(() => focusElement(grid.firstChild), 100);
+        setTimeout(() => focusElement(grid.firstChild), 200);
 
-    } catch (e) { log("Erreur Vidéos: " + e.message); }
+    } catch (e) { log("Erreur: " + e.message); }
 };
 
-// --- NOUVEAU LECTEUR STREAMING ---
+// --- STREAMING AVANCÉ AVEC LOADER ---
 const playVideoStreaming = async (msg) => {
     navigateTo('player-screen');
     const v = document.getElementById('main-player');
-    v.src = "";
+    const loader = document.getElementById('video-loader');
+    const bar = document.getElementById('loader-bar');
+    const txt = document.getElementById('loader-text');
+    const btnCancel = document.getElementById('btn-cancel-load');
     
-    // Si OPFS dispo, on l'utilise comme cache disque
-    // ET on essaie de lancer la lecture pendant le téléchargement
-    if (navigator.storage && navigator.storage.getDirectory) {
-        log("Mode Streaming Disque (OPFS)...");
-        playVideoOPFS(msg, v);
-    } else {
-        log("Mode RAM (Pas de stockage dispo)...");
-        // Fallback RAM
-    }
-};
+    // Reset UI
+    v.src = "";
+    loader.classList.remove('hidden');
+    bar.style.width = '0%';
+    txt.textContent = "Initialisation...";
+    
+    // Activer Anti-Veille
+    requestWakeLock();
+    
+    // Gestion Annulation
+    let isCancelled = false;
+    btnCancel.onclick = () => { isCancelled = true; goBack(); };
+    btnCancel.focus();
 
-const playVideoOPFS = async (msg, videoEl) => {
+    if (!navigator.storage || !navigator.storage.getDirectory) {
+        alert("Stockage non dispo. Impossible de lire."); return;
+    }
+
     try {
         const root = await navigator.storage.getDirectory();
         const fileHandle = await root.getFileHandle('temp_video.mp4', { create: true });
@@ -274,55 +317,46 @@ const playVideoOPFS = async (msg, videoEl) => {
         
         const size = msg.media.document.size;
         let downloaded = 0;
-        let isPlaying = false;
         
-        // Interval pour vérifier si on peut lancer la lecture
-        const checkPlay = setInterval(async () => {
-            if(isPlaying) { clearInterval(checkPlay); return; }
-            
-            // Si on a téléchargé assez (ex: 5MB ou 10%)
-            // Note: C'est du "Fake Streaming", on recharge la source
-            // Ça ne marche bien que si le MP4 est "Fast Start".
-            if(downloaded > 5 * 1024 * 1024 || downloaded === size) {
-                // On ne peut pas lire le fichier pendant qu'il est ouvert en écriture par 'writable'
-                // C'est la limitation de OPFS.
-                // Donc le VRAI streaming live sur OPFS demande de fermer/rouvrir ou d'utiliser des Workers.
-                
-                // Pour ce prototype, on reste sur le téléchargement complet MAIS
-                // avec une UI qui montre que ça avance.
-            }
-        }, 1000);
-
-        log("Téléchargement en cours...");
+        txt.textContent = "Téléchargement (0%)...";
 
         for await (const chunk of client.iterDownload({
             file: msg.media,
             requestSize: 1024 * 1024,
         })) {
+            if(isCancelled) { await writable.close(); return; }
+            
             await writable.write(chunk);
             downloaded += chunk.length;
+            
+            // Mise à jour Barre
             const pct = Math.round((downloaded / size) * 100);
-            if(pct % 5 === 0) log(`Buffering: ${pct}%`);
+            bar.style.width = `${pct}%`;
+            txt.textContent = `Téléchargement (${pct}%)...`;
         }
         
         await writable.close();
-        log("Lancement lecture.");
+        
+        if(isCancelled) return;
+        
+        // Lancement
+        txt.textContent = "Prêt !";
+        loader.classList.add('hidden'); // Cache le loader
         
         const file = await fileHandle.getFile();
-        videoEl.src = URL.createObjectURL(file);
-        videoEl.play();
-        videoEl.focus();
+        v.src = URL.createObjectURL(file);
+        v.play();
+        v.focus();
 
     } catch(e) {
-        log("Erreur Stream: " + e.message);
+        txt.textContent = "Erreur: " + e.message;
         if(e.name === 'QuotaExceededError') {
-            alert("Disque plein ! Vide le cache.");
-            clearVideoCache();
+            if(confirm("Disque plein. Vider ?")) clearVideoCache();
         }
     }
 };
 
-// --- EVENTS ---
+// --- CONFIG ---
 const btnSave = document.getElementById('save-config-btn');
 if(btnSave) btnSave.onclick = () => {
     localStorage.setItem('teletv_id', document.getElementById('api-id').value);
@@ -336,8 +370,6 @@ document.getElementById('btn-reload').onclick = () => location.reload();
 document.getElementById('btn-logout').onclick = () => {
     if(confirm("Déco ?")) { localStorage.clear(); clearVideoCache(); location.reload(); }
 };
-
-// Recherche
 document.getElementById('btn-do-search').onclick = async () => {
     const q = document.getElementById('search-input').value;
     const resGrid = document.getElementById('search-results');
@@ -351,8 +383,7 @@ document.getElementById('btn-do-search').onclick = async () => {
             el.className = 'card';
             el.textContent = c.title || c.firstName;
             el.tabIndex = 0;
-            // FIX SCROLL
-            el.addEventListener('focus', () => el.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+            el.onfocus = () => focusElement(el);
             el.onclick = () => loadVideos(c);
             el.onkeydown = (e) => e.key === 'Enter' && loadVideos(c);
             resGrid.appendChild(el);
