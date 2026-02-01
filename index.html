@@ -5,44 +5,58 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>TeleTV Player</title>
     <link rel="stylesheet" href="style.css">
-    <!-- Import GramJS via CDN pour éviter une étape de build complexe pour ce test -->
-    <script src="https://cdn.jsdelivr.net/npm/telegram@2.19.7/dist/browser/index.js"></script>
 </head>
 <body>
     <div id="app">
-        <!-- Écran de Connexion -->
-        <section id="auth-screen" class="screen active">
-            <h1>TeleTV Login</h1>
+        <!-- 1. Écran de Configuration API -->
+        <section id="config-screen" class="screen active">
+            <h1>Configuration Initiale</h1>
+            <p class="info-text">Vos identifiants seront stockés localement.</p>
+            <div class="input-group">
+                <input type="text" id="api-id" placeholder="API ID (ex: 123456)" tabindex="0">
+                <input type="text" id="api-hash" placeholder="API Hash" tabindex="0">
+                <button id="save-config-btn" tabindex="0">Sauvegarder & Continuer</button>
+            </div>
+            <p class="small-text">Obtenez ces clés sur <a href="https://my.telegram.org" target="_blank">my.telegram.org</a></p>
+        </section>
+
+        <!-- 2. Écran de Connexion -->
+        <section id="auth-screen" class="screen hidden">
+            <h1>Connexion Telegram</h1>
             <div class="input-group">
                 <input type="text" id="phone" placeholder="+33612345678" tabindex="0">
                 <button id="send-code-btn" tabindex="0">Recevoir le code</button>
             </div>
+            
             <div class="input-group hidden" id="code-group">
-                <input type="text" id="code" placeholder="12345" tabindex="0">
-                <input type="password" id="password" placeholder="Mot de passe (2FA)" tabindex="0">
+                <input type="text" id="code" placeholder="Code SMS (12345)" tabindex="0">
+                <input type="password" id="password" placeholder="Mot de passe 2FA (si actif)" tabindex="0">
                 <button id="login-btn" tabindex="0">Se connecter</button>
             </div>
-            <div id="status">Prêt.</div>
+            
+            <button id="reset-config-btn" class="secondary-btn" tabindex="0">Réinitialiser Config</button>
+            <div id="status">En attente...</div>
         </section>
 
-        <!-- Liste des Canaux -->
+        <!-- 3. Liste des Canaux -->
         <section id="channels-screen" class="screen hidden">
             <h2>Vos Canaux</h2>
             <div id="channels-grid" class="grid"></div>
         </section>
 
-        <!-- Liste des Vidéos -->
+        <!-- 4. Liste des Vidéos -->
         <section id="videos-screen" class="screen hidden">
             <h2 id="channel-title">Vidéos</h2>
             <div id="videos-grid" class="grid"></div>
         </section>
 
-        <!-- Lecteur Vidéo -->
+        <!-- 5. Lecteur Vidéo -->
         <section id="player-screen" class="screen hidden">
             <video id="main-player" controls></video>
         </section>
     </div>
 
-    <script src="app.js"></script>
+    <!-- IMPORTANT : type="module" est obligatoire ici -->
+    <script type="module" src="app.js"></script>
 </body>
 </html>
