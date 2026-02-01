@@ -64,12 +64,10 @@ const startApp = async () => {
 
         await client.connect();
         
-        // Vérification si déjà connecté
         if (await client.checkAuthorization()) {
             log("Session valide !");
             loadChannels();
         } else {
-            // Pas connecté -> On lance le flux QR Code
             startQRLogin();
         }
     } catch (e) {
@@ -92,15 +90,13 @@ const startQRLogin = async () => {
     try {
         log("Génération QR Code...");
         
-        // Correction ici : on passe bien l'objet avec qrCode et onError
         await client.signInUserWithQrCode({
             apiId: API_ID,
             apiHash: API_HASH,
-            qrCode: async (code) => {
+            qrCode: (code) => {
                 log("Nouveau QR Code reçu");
                 qrStatus.textContent = "Scannez ce code avec Telegram (Réglages > Appareils)";
                 qrDiv.innerHTML = "";
-                // Génération du QR Code avec la librairie qrcode.js
                 new QRCode(qrDiv, {
                     text: `tg://login?token=${code.token.toString('base64url')}`,
                     width: 256,
@@ -110,22 +106,19 @@ const startQRLogin = async () => {
             onError: (err) => {
                 log("Erreur QR: " + err.message);
                 qrStatus.textContent = "Erreur: " + err.message;
-                // On relance la génération après 2 secondes
                 setTimeout(startQRLogin, 2000);
             }
         });
 
-        // Si on arrive ici, c'est que l'authentification est terminée
         log("Login succès !");
         localStorage.setItem('teletv_session', client.session.save());
         loadChannels();
 
     } catch (e) {
         log("Session expirée ou erreur: " + e.message);
-        setTimeout(startQRLogin, 2000); // Relance en cas d'erreur
+        setTimeout(startQRLogin, 2000);
     }
 };
-
 
 const loadChannels = async () => {
     log("Chargement canaux...");
@@ -169,7 +162,6 @@ const loadVideos = async (entity) => {
         const el = document.createElement('div');
         el.className = 'card';
         
-        // Durée
         let dur = "";
         const attr = m.media?.document?.attributes?.find(a => a.duration);
         if(attr) dur = ` (${Math.floor(attr.duration/60)}:${attr.duration%60})`;
@@ -225,4 +217,3 @@ document.onkeydown = (e) => {
 
 // START
 startApp();
-
