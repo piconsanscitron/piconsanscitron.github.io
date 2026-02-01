@@ -71,9 +71,19 @@
         </section>
 
         <!-- Player -->
-        <section id="player-screen" class="screen hidden">
+        <section id="player-screen" class="screen hidden" style="position:relative;">
             <video id="main-player" controls style="width:100%; height:100%; background:black;"></video>
+            
+            <!-- NOUVEAU: Loader Overlay -->
+            <div id="video-loader" class="hidden">
+                <div id="loader-text">Préparation...</div>
+                <div class="progress-container">
+                    <div id="loader-bar" class="progress-bar"></div>
+                </div>
+                <button id="btn-cancel-load" style="margin-top:20px;">Annuler (Retour)</button>
+            </div>
         </section>
+
         
         <div id="status" style="position:fixed; bottom:10px; left:10px; font-size:0.8rem; color:#ffd700; background:rgba(0,0,0,0.7); padding:5px; border-radius:4px; display:none;"></div>
     </div>
@@ -81,3 +91,4 @@
     <script type="module" src="app.js"></script>
 </body>
 </html>
+
