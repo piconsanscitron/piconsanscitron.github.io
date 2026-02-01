@@ -28,10 +28,9 @@ const showScreen = (id) => {
     const t = document.getElementById(id);
     if(t) {
         t.classList.remove('hidden');
-        t.classList.add('active'); // CSS Flex s'appliquera ici pour config/auth
+        t.classList.add('active'); // CSS Flex s'applique ici pour config/auth
         window.scrollTo(0, 0);
         
-        // Push state pour le bouton Back physique
         history.pushState({ screen: id }, null, "");
 
         setTimeout(() => {
@@ -69,6 +68,14 @@ window.onpopstate = (e) => {
     goBack();
 };
 
+const checkDiskUsage = async () => {
+    if (navigator.storage && navigator.storage.estimate) {
+        const { usage } = await navigator.storage.estimate();
+        const el = document.getElementById('disk-usage');
+        if(el) el.textContent = `Cache: ${(usage/1024/1024).toFixed(0)} MB`;
+    }
+};
+
 // --- TELEGRAM ---
 const startApp = async () => {
     const sId = localStorage.getItem('teletv_id');
@@ -84,7 +91,6 @@ const startApp = async () => {
         return; 
     }
     
-    // Cache config explicitement
     document.getElementById('config-screen').classList.remove('active');
     document.getElementById('config-screen').classList.add('hidden');
     
@@ -99,7 +105,6 @@ const startApp = async () => {
         log("Err: " + e.message); 
         if(e.message.includes("API_ID")) { localStorage.clear(); location.reload(); }
         else {
-            // Si erreur connexion, retour config
             document.getElementById('config-screen').classList.add('active'); 
             document.getElementById('config-screen').classList.remove('hidden');
         }
@@ -133,6 +138,7 @@ const startQRLogin = async () => {
 };
 
 const loadChannels = async () => {
+    checkDiskUsage();
     navigateTo('channels-screen');
     const grid = document.getElementById('channels-grid');
     grid.innerHTML = "Chargement...";
@@ -140,7 +146,6 @@ const loadChannels = async () => {
         const dialogs = await client.getDialogs({ limit: 100 });
         grid.innerHTML = "";
         
-        // Filtre et Tri
         const filtered = dialogs.filter(d => (d.isChannel || d.isGroup) && !d.archived).sort((a,b) => b.pinned - a.pinned);
         
         filtered.forEach(d => {
@@ -175,11 +180,14 @@ const loadVideos = async (entity) => {
             const attr = m.media?.document?.attributes?.find(a => a.duration);
             if(attr) dur = `${Math.floor(attr.duration/60)}:${(attr.duration%60).toString().padStart(2,'0')}`;
             
+            const title = m.message || "Vidéo sans titre";
+            const size = (m.media.document.size/1024/1024).toFixed(0);
+
             el.innerHTML = `
-                <div class="thumb-placeholder">...</div>
+                <div class="thumb-placeholder"><span style="font-size:0.8rem; color:#666;">...</span></div>
                 <div class="meta">
-                    <div style="font-weight:bold; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;">${m.message || "Vidéo"}</div>
-                    <div style="font-size:0.75rem; color:#aaa;">⏱ ${dur} | ${(m.media.document.size/1024/1024).toFixed(0)} MB</div>
+                    <div class="video-title">${title}</div>
+                    <div style="font-size:0.75rem; color:#aaa; margin-top:4px;">⏱ ${dur} | ${size} MB</div>
                 </div>`;
             el.tabIndex = 0;
             el.onfocus = () => focusElement(el);
@@ -209,7 +217,6 @@ const performSearch = async () => {
     resGrid.innerHTML = "Cherche...";
     
     try {
-        // Recherche Globale
         const res = await client.invoke(new Api.contacts.Search({ q: q, limit: 20 }));
         resGrid.innerHTML = "";
         
@@ -286,7 +293,6 @@ document.getElementById('btn-reload').onclick = () => location.reload();
 document.getElementById('btn-logout').onclick = () => { if(confirm("Déco?")) { localStorage.clear(); clearCache(); location.reload(); }};
 document.getElementById('btn-do-search').onclick = performSearch;
 
-// Fix Recherche Touche Entrée
 document.getElementById('search-input').onkeydown = (e) => {
     if(e.key === 'Enter') performSearch();
 };
