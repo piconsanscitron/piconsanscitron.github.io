@@ -1,16 +1,17 @@
 :root {
-    --bg-color: #1a1a1a;
-    --focus-color: #0088cc; /* Telegram Blue */
+    --bg-color: #121212;
+    --surface-color: #1e1e1e;
+    --focus-color: #40a7e3; /* Telegram Blue */
     --text-color: #ffffff;
 }
 
 body {
     background-color: var(--bg-color);
     color: var(--text-color);
-    font-family: sans-serif;
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
     margin: 0;
-    overflow: hidden; /* Pas de scrollbar sur TV, on scroll le contenu */
-    font-size: 2vh; /* Unité relative à la hauteur pour l'échelle TV */
+    overflow: hidden;
+    font-size: 1.5rem; /* Gros texte pour TV */
 }
 
 .screen {
@@ -18,52 +19,86 @@ body {
     height: 100vh;
     padding: 2rem;
     box-sizing: border-box;
-}
-
-.screen.active {
-    display: flex;
     flex-direction: column;
 }
 
+.screen.active { display: flex; }
 .hidden { display: none !important; }
 
-/* Grid layout pour TV */
+h1, h2 { margin-top: 0; color: var(--focus-color); }
+
 .grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 1.5rem;
     overflow-y: auto;
-    padding: 1rem;
+    padding: 1rem 0;
 }
 
-/* Éléments interactifs */
+/* Carte / Élément de liste */
 .card {
-    background: #333;
-    padding: 1rem;
-    border-radius: 8px;
-    text-align: center;
+    background: var(--surface-color);
+    padding: 1.5rem;
+    border-radius: 12px;
     cursor: pointer;
     border: 3px solid transparent;
-    transition: transform 0.2s;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    min-height: 80px;
 }
 
-/* Gestion du focus (Navigation Télécommande) */
+/* États interactifs (Navigation clavier/télécommande) */
+input, button, .card { outline: none; }
+
 :focus {
-    outline: none;
-    border-color: var(--focus-color);
-    transform: scale(1.05);
-    background-color: #444;
-    box-shadow: 0 0 20px rgba(0, 136, 204, 0.5);
+    border-color: var(--focus-color) !important;
+    background-color: #2c2c2c;
+    transform: scale(1.02);
+    box-shadow: 0 0 15px rgba(64, 167, 227, 0.4);
+}
+
+.input-group {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    max-width: 600px;
 }
 
 input {
-    font-size: 1.5rem;
-    padding: 0.5rem;
-    margin-bottom: 1rem;
-    width: 100%;
-    background: #222;
-    color: white;
+    font-size: 1.2rem;
+    padding: 1rem;
+    background: #333;
     border: 2px solid #555;
+    color: white;
+    border-radius: 8px;
+}
+
+button {
+    font-size: 1.2rem;
+    padding: 1rem;
+    background: var(--focus-color);
+    color: white;
+    border: 2px solid transparent;
+    border-radius: 8px;
+    font-weight: bold;
+    cursor: pointer;
+}
+
+.secondary-btn {
+    background: transparent;
+    border: 1px solid #666;
+    color: #888;
+    margin-top: 2rem;
+    align-self: flex-start;
+}
+
+#status {
+    margin-top: 1rem;
+    color: #ffd700;
+    font-family: monospace;
 }
 
 #main-player {
@@ -71,3 +106,5 @@ input {
     height: 100%;
     background: black;
 }
+
+a { color: var(--focus-color); }
