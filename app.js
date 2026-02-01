@@ -251,7 +251,15 @@ const playStream = async (msg) => {
     const txt = document.getElementById('loader-text');
     const btnCancel = document.getElementById('btn-cancel-load');
     
-    v.src = ""; loader.classList.remove('hidden'); bar.style.width = "0%"; txt.textContent = "Init...";
+    // Initialisation
+    v.src = "";
+    // On s'assure que hidden est bien enlevé au début
+    loader.classList.remove('hidden'); 
+    loader.style.display = 'flex'; // Force display flex explicite au cas où le CSS hidden serait mal géré
+    
+    bar.style.width = "0%"; 
+    txt.textContent = "Init...";
+    
     if('wakeLock' in navigator) try { wakeLock = await navigator.wakeLock.request('screen'); } catch(e){}
     
     let cancelled = false;
@@ -272,15 +280,11 @@ const playStream = async (msg) => {
             fileHandle = await root.getFileHandle('temp_video.mp4');
             if (currentId === cachedId) {
                 const f = await fileHandle.getFile();
-                if(f.size > 1000) { // On vérifie que le fichier n'est pas vide (min 1KB)
-                    needsDownload = false;
-                    txt.textContent = "Fichier en cache !";
-                    bar.style.width = "100%";
-                }
+                if(f.size > 1000) needsDownload = false;
             }
         } catch(e) { needsDownload = true; }
 
-        // TELECHARGEMENT
+        // TELECHARGEMENT (Si nécessaire)
         if (needsDownload) {
             txt.textContent = "Téléchargement...";
             fileHandle = await root.getFileHandle('temp_video.mp4', { create: true });
@@ -301,27 +305,37 @@ const playStream = async (msg) => {
 
         if(cancelled) return;
 
-        // LECTURE AVEC FIX TV
-        txt.textContent = "Lecture...";
-        loader.classList.add('hidden'); // Cache immédiat
+        // LECTURE
+        txt.textContent = "Lancement...";
         
-        setTimeout(async () => {
-            try {
-                const file = await fileHandle.getFile();
-                v.src = URL.createObjectURL(file);
-                v.load();
-                const p = v.play();
-                if(p) p.then(()=>v.focus()).catch(()=>{ console.log("Autoplay bloqué"); v.focus(); });
-            } catch(e) {
-                alert("Erreur lecture: "+e.message); loader.classList.remove('hidden');
-            }
-        }, 150); // Délai rendu
+        // --- CORRECTIF V14 : DISPARITION IMMÉDIATE ---
+        
+        // 1. On prépare le fichier
+        const file = await fileHandle.getFile();
+        const url = URL.createObjectURL(file);
+        
+        // 2. On masque le loader BRUTALEMENT via style direct
+        // C'est plus fiable que classList.add('hidden') sur certains moteurs TV anciens
+        loader.style.display = 'none'; 
+        loader.classList.add('hidden'); 
+        
+        // 3. On lance la vidéo avec un mini délai pour laisser le thread UI respirer
+        setTimeout(() => {
+            v.src = url;
+            v.load();
+            const p = v.play();
+            if(p) p.then(()=>v.focus()).catch(()=>{ console.log("Autoplay bloqué"); v.focus(); });
+        }, 50);
 
     } catch (e) { 
         txt.textContent = "Err: " + e.message; 
         if(e.name === 'QuotaExceededError') { if(confirm("Vider Cache?")) clearCache(); }
+        // En cas d'erreur, on réaffiche
+        loader.style.display = 'flex';
+        loader.classList.remove('hidden');
     }
 };
+
 
 const clearCache = async () => { 
     try { 
@@ -346,3 +360,4 @@ document.getElementById('search-input').onkeydown = (e) => {
 document.onkeydown = (e) => { if(e.key === 'Backspace' || e.key === 'Escape') goBack(); };
 
 startApp();
+
