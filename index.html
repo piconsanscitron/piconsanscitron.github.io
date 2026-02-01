@@ -3,96 +3,71 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>TeleTV Player</title>
+    <title>TeleTV</title>
     <link rel="stylesheet" href="style.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-    <style>
-        /* Ajout de styles pour la barre d'outils */
-        .toolbar {
-            display: flex; gap: 1rem; padding: 1rem 0; margin-bottom: 1rem; border-bottom: 1px solid #333;
-        }
-        .toolbar button {
-            padding: 0.5rem 1rem; font-size: 1rem; background: #333; border: none; color: white; border-radius: 4px;
-        }
-        .toolbar button:focus { background: var(--focus-color); transform: scale(1.1); }
-        .badge { background: #40a7e3; color: white; padding: 2px 6px; border-radius: 4px; font-size: 0.8rem; margin-right: 5px; }
-    </style>
 </head>
 <body>
     <div id="app">
+        <!-- CONFIG (Centré) -->
+        <section id="config-screen" class="screen active">
+            <div class="center-box">
+                <h1>Configuration</h1>
+                <input type="text" id="api-id" placeholder="API ID (ex: 12345)" tabindex="0">
+                <input type="text" id="api-hash" placeholder="API Hash" tabindex="0">
+                <button id="save-config-btn" tabindex="0">Connexion</button>
+            </div>
+        </section>
 
+        <!-- AUTH QR (Centré) -->
+        <section id="auth-screen" class="screen hidden">
+            <div class="center-box" style="align-items: center;">
+                <h1>Scanner le QR</h1>
+                <div id="qrcode" style="background: white; padding: 10px;"></div>
+                <div id="qr-status" style="color:#aaa;">Génération...</div>
+                <button id="btn-cancel-auth" tabindex="0">Annuler</button>
+            </div>
+        </section>
 
-<section id="config-screen" class="screen active">
-    <div class="input-group">
-        <h1>Configuration</h1>
-        <input type="text" id="api-id" placeholder="API ID" tabindex="0">
-        <input type="text" id="api-hash" placeholder="API Hash" tabindex="0">
-        <button id="save-config-btn" tabindex="0">Sauvegarder</button>
-    </div>
-</section>
-
-<section id="auth-screen" class="screen hidden">
-    <div class="input-group" style="align-items: center;">
-        <h1>Scanner le QR</h1>
-        <div id="qrcode" style="background: white; padding: 10px; margin: 20px;"></div>
-        <button id="btn-cancel-auth" tabindex="0">Annuler</button>
-    </div>
-</section>
-
-
-        <!-- Canaux (Menu Principal) -->
+        <!-- CANAUX -->
         <section id="channels-screen" class="screen hidden">
-            <div style="display: flex; justify-content: space-between; align-items: center;">
-                <h2>Vos Canaux</h2>
-                <div id="disk-usage" style="font-size: 0.8rem; color: #888;"></div>
-            </div>
-            
             <div class="toolbar">
-                <button id="btn-search-nav" tabindex="0">🔍 Rechercher</button>
-                <button id="btn-clear-cache" tabindex="0">🗑️ Vider Cache Vidéo</button>
-                <button id="btn-reload" tabindex="0">🔄 Actualiser</button>
-                <button id="btn-logout" tabindex="0">❌ Déconnexion</button>
+                <button id="btn-search-nav" tabindex="0">🔍 Recherche</button>
+                <button id="btn-reload" tabindex="0">Actualiser</button>
+                <button id="btn-clear-cache" tabindex="0">Vider Cache</button>
+                <button id="btn-logout" tabindex="0">Déconnexion</button>
             </div>
-
+            <h2 style="margin-bottom: 1rem;">Vos Canaux</h2>
             <div id="channels-grid" class="grid"></div>
         </section>
 
-        <!-- Recherche -->
+        <!-- RECHERCHE -->
         <section id="search-screen" class="screen hidden">
-            <h2>Recherche Globale</h2>
-            <div class="input-group">
-                <input type="text" id="search-input" placeholder="Nom du canal ou mot clé..." tabindex="0">
-                <button id="btn-do-search" tabindex="0">Lancer la recherche</button>
+            <div class="toolbar">
+                <input type="text" id="search-input" placeholder="Chercher un canal..." tabindex="0" style="flex:1;">
+                <button id="btn-do-search" tabindex="0">OK</button>
             </div>
             <div id="search-results" class="grid"></div>
         </section>
 
-        <!-- Vidéos -->
+        <!-- VIDEOS -->
         <section id="videos-screen" class="screen hidden">
-            <h2 id="channel-title">Vidéos</h2>
+            <h2 id="channel-title" style="margin-bottom:1rem;">Vidéos</h2>
             <div id="videos-grid" class="grid"></div>
         </section>
 
-        <!-- Player -->
-        <section id="player-screen" class="screen hidden" style="position:relative;">
-            <video id="main-player" controls style="width:100%; height:100%; background:black;"></video>
-            
-            <!-- NOUVEAU: Loader Overlay -->
+        <!-- PLAYER -->
+        <section id="player-screen" class="screen hidden">
+            <video id="main-player" controls style="width:100%; height:100%;"></video>
             <div id="video-loader" class="hidden">
-                <div id="loader-text">Préparation...</div>
-                <div class="progress-container">
-                    <div id="loader-bar" class="progress-bar"></div>
-                </div>
-                <button id="btn-cancel-load" style="margin-top:20px;">Annuler (Retour)</button>
+                <h2 id="loader-text">Chargement...</h2>
+                <div class="progress-container"><div id="loader-bar" class="progress-bar"></div></div>
+                <button id="btn-cancel-load" tabindex="0">Annuler</button>
             </div>
         </section>
-
         
-        <div id="status" style="position:fixed; bottom:10px; left:10px; font-size:0.8rem; color:#ffd700; background:rgba(0,0,0,0.7); padding:5px; border-radius:4px; display:none;"></div>
+        <div id="status" style="position:fixed; bottom:20px; left:20px; background:#333; padding:10px; border-radius:5px; display:none; z-index:9999;"></div>
     </div>
-
     <script type="module" src="app.js"></script>
 </body>
 </html>
-
-
