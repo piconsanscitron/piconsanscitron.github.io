@@ -108,3 +108,38 @@ button {
 }
 
 a { color: var(--focus-color); }
+
+
+/* Overlay de chargement vidéo */
+#video-loader {
+    position: absolute;
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(0,0,0,0.8);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    z-index: 10;
+}
+
+.progress-container {
+    width: 80%;
+    height: 10px;
+    background: #444;
+    border-radius: 5px;
+    margin-top: 15px;
+    overflow: hidden;
+}
+
+.progress-bar {
+    width: 0%;
+    height: 100%;
+    background: var(--focus-color);
+    transition: width 0.2s;
+}
+
+#loader-text {
+    font-size: 1.5rem;
+    font-weight: bold;
+}
+
